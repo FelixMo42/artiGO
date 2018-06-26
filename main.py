@@ -52,11 +52,11 @@ def raycast(sx,sy,a):
 				return dist(sx, sy, x, y)
 
 def update():
-	ultra_LS = raycast(bot.pos[0], bot.pos[0], bot.angle + 45)
-	ultra_LC = raycast(bot.pos[0], bot.pos[0], bot.angle + 10)
-	ultra_FC = raycast(bot.pos[0], bot.pos[0], bot.angle + 0)
-	ultra_RC = raycast(bot.pos[0], bot.pos[0], bot.angle - 10)
-	ultra_RS = raycast(bot.pos[0], bot.pos[0], bot.angle - 45)
+	ultra_LS = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] + 45)
+	ultra_LC = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] + 10)
+	ultra_FC = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] + 0)
+	ultra_RC = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] - 10)
+	ultra_RS = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] - 45)
 
 	## start nural magic ##
 
@@ -68,14 +68,16 @@ def update():
 	## end nutal magic ##
 
 	LS = servo_FL + servo_BL
-	RS = serbo_FR + servo_BR
+	RS = servo_FR + servo_BR
 
 	if LS > RS:
-		bot.angle += 0
+		bot["angle"] += 0
 	elif RS > LS:
-		bot.angle -= 0
+		bot["angle"] -= 0
 
 	speed = (LS + RS) / 4
 
-	bot.pos[0] += speed * math.cos(math.radians(bot.angle))
-	bot.pos[1] += speed * math.sin(math.radians(bot.angle))
+	bot["pos"][0] += speed * math.cos(math.radians(bot["angle"]))
+	bot["pos"][1] += speed * math.sin(math.radians(bot["angle"]))
+
+update()

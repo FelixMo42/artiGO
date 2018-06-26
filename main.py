@@ -2,6 +2,7 @@
 
 import tensorflow as tf
 import numpy as np
+import pygame as pg
 import math
 
 #creat simulation
@@ -42,7 +43,7 @@ def raycast(sx,sy,a):
 				return dist(sx, sy, x, y)
 	elif a < 0:
 		for x in range(0, sx):
-			y = sx - math.floor(math.abs(x) * math.tan(math.radians(a)))
+			y = sx - math.floor(math.fabs(x) * math.tan(math.radians(a)))
 			if map[x, y] == 1:
 				return dist(sx, sy, x, y)
 	elif a == 0:
@@ -77,7 +78,39 @@ def update():
 
 	speed = (LS + RS) / 4
 
-	bot["pos"][0] += speed * math.cos(math.radians(bot["angle"]))
-	bot["pos"][1] += speed * math.sin(math.radians(bot["angle"]))
+	bot["pos"][0] += int(speed * math.cos(math.radians(bot["angle"])))
+	bot["pos"][1] += int(speed * math.sin(math.radians(bot["angle"])))
 
-update()
+## pygame stuff ##
+
+pg.init()
+screen = pg.display.set_mode((width, height))
+done = False
+
+# draw map
+
+for x in range(width):
+	for y in range(height):
+		if map[x, y] == 1:
+			screen.set_at((x,y), [255,255,255])
+
+# draw bot
+
+def draw():
+	pg.draw.rect(screen, [0,0,255], (bot["pos"] - np.array(bot["size"]) / 2, bot["size"] ), 2 )
+
+def clear():
+	pg.draw.rect(screen, [0,0,0], (bot["pos"] - np.array(bot["size"]) / 2, bot["size"] ), 2 )
+
+# main loop
+
+while not done:
+	for event in pg.event.get():
+		if event.type == pg.QUIT:
+			done = True
+
+	clear()
+	update()
+	draw()
+
+	pg.display.flip()

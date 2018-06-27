@@ -1,29 +1,36 @@
-#imports
+# imports
 
 import tensorflow as tf
 import numpy as np
 import pygame as pg
+import random
 import math
 
-#creat simulation
-
-map = np.zeros((1000,1000), dtype=int)
-
-def draw(sx,sy,w,h):
-	map[sx : sx + w,sy : sy + h] = 1
-
-bot = {
-	"pos" : [0, 0],
-	"size" : [20, 60],
-	"angle" : 0
-}
+# creat  map
 
 width = 1000
 height = 1000
 
-target = [900, 900]
+map = np.zeros((width,height), dtype=int)
+map[:,0] = 1
+map[:,height - 1] = 1
+map[0,:] = 1
+map[width - 1,:] = 1
 
-draw(500 - 30,500 - 30,60,60)
+def addRect(sx,sy,w,h):
+	map[sx : sx + w,sy : sy + h] = 1
+
+addRect(500 - 30,500 - 30,60,60)
+
+# creat simulation
+
+bot = {
+	"pos" : [250, 250],
+	"size" : [24, 60],
+	"angle" : 45
+}
+
+target = [750, 750]
 
 def dist(xi,yi,xii,yii):
 	sq1 = (xi-xii)*(xi-xii)
@@ -61,10 +68,10 @@ def update():
 
 	## start nural magic ##
 
-	servo_FL = 1
-	servo_FR = 1
-	servo_BL = 1
-	servo_BR = 1
+	servo_FL = random.randint(-1, 3)
+	servo_FR = random.randint(-1, 3)
+	servo_BL = random.randint(-1, 3)
+	servo_BR = random.randint(-1, 3)
 
 	## end nutal magic ##
 
@@ -72,14 +79,14 @@ def update():
 	RS = servo_FR + servo_BR
 
 	if LS > RS:
-		bot["angle"] += 0
+		bot["angle"] += (LS - RS)
 	elif RS > LS:
-		bot["angle"] -= 0
+		bot["angle"] -= (RS - LS)
 
 	speed = (LS + RS) / 4
 
-	bot["pos"][0] += int(speed * math.cos(math.radians(bot["angle"])))
-	bot["pos"][1] += int(speed * math.sin(math.radians(bot["angle"])))
+	bot["pos"][0] += int(speed * math.sin(math.radians(bot["angle"])))
+	bot["pos"][1] += int(speed * math.cos(math.radians(bot["angle"])))
 
 ## pygame stuff ##
 
@@ -92,15 +99,28 @@ done = False
 for x in range(width):
 	for y in range(height):
 		if map[x, y] == 1:
-			screen.set_at((x,y), [255,255,255])
+			screen.set_at((x,y), (255,255,255))
+
+pg.draw.circle(screen, (0,255,0), target, 5, 2)
 
 # draw bot
 
-def draw():
-	pg.draw.rect(screen, [0,0,255], (bot["pos"] - np.array(bot["size"]) / 2, bot["size"] ), 2 )
+def draw(color):
+	pg.transform.rotate(screen, bot["angle"])
 
-def clear():
-	pg.draw.rect(screen, [0,0,0], (bot["pos"] - np.array(bot["size"]) / 2, bot["size"] ), 2 )
+	a = math.radians(-bot["angle"])
+	sin = math.sin(a)
+	cos = math.cos(a)
+
+	w = bot["size"][0] / 2
+	h = bot["size"][1] / 2
+
+	pg.draw.lines(screen, color, True, [
+		bot["pos"] + np.array([-w * cos -  h * sin, -w * sin +  h * cos]),
+		bot["pos"] + np.array([-w * cos - -h * sin, -w * sin + -h * cos]),
+		bot["pos"] + np.array([ w * cos - -h * sin,  w * sin + -h * cos]),
+		bot["pos"] + np.array([ w * cos -  h * sin,  w * sin +  h * cos])
+	])
 
 # main loop
 
@@ -109,8 +129,8 @@ while not done:
 		if event.type == pg.QUIT:
 			done = True
 
-	clear()
+	draw((0,0,0))
 	update()
-	draw()
+	draw((0,0,255))
 
 	pg.display.flip()

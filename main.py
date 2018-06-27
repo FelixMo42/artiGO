@@ -37,27 +37,58 @@ def dist(xi,yi,xii,yii):
 	sq2 = (yi-yii)*(yi-yii)
 	return math.sqrt(sq1 + sq2)
 
-def raycast(sx,sy,a):
+def inrange(x,y):
+	return x >= 0 and y >= 0 and x < width and y < height
+
+def raycast(sx,sy,a,d = -1):
 	if a == 180:
 		x = sx
 		for y in range(sy, 0, -1):
+			if not inrange(x, y):
+				break
+			if d != -1 and dist(sx, sy, x, y) < d:
+				break
 			if map[x, y] == 1:
+				if d != -1:
+					return False
 				return dist(sx, sy, x, y)
 	elif a > 0:
 		for x in range(0, width - sx):
 			y = sx + math.floor(x * math.tan(math.radians(a)))
+			if not inrange(x, y):
+				break
+			if d != -1 and dist(sx, sy, x, y):
+				return False
 			if map[x, y] == 1:
+				if d != -1:
+					return False
 				return dist(sx, sy, x, y)
 	elif a < 0:
 		for x in range(0, sx):
 			y = sx - math.floor(math.fabs(x) * math.tan(math.radians(a)))
+			if not inrange(x, y):
+				break
+			if d != -1 and dist(sx, sy, x, y):
+				return False
 			if map[x, y] == 1:
+				if d != -1:
+					return False
 				return dist(sx, sy, x, y)
 	elif a == 0:
 		x = sx
 		for y in range(sy, height):
+			if not inrange(x, y):
+				break
+			if d != -1 and dist(sx, sy, x, y):
+				return False
 			if map[x, y] == 1:
+				if d != -1:
+					return False
 				return dist(sx, sy, x, y)
+	if d == -1:
+		return 100
+	else:
+		return True
 
 def update():
 	ultra_LS = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] + 45)

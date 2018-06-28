@@ -1,3 +1,11 @@
+# prefs
+
+ui = True
+trail = True
+events = True
+duration = 1000
+speed = 5
+
 # imports
 
 import tensorflow as tf
@@ -5,8 +13,9 @@ import numpy as np
 import pygame as pg
 import random
 import math
+import time
 
-# creat  map
+# create  map
 
 width = 1000
 height = 1000
@@ -27,10 +36,13 @@ addRect(500 - 30,500 - 30,60,60)
 bot = {
 	"pos" : [250, 250],
 	"size" : [24, 60],
-	"angle" : 45
+	"angle" : 45,
+	"color" : [0,0,255]
 }
 
 target = [750, 750]
+
+# raycasting
 
 def dist(xi,yi,xii,yii):
 	sq1 = (xi-xii) ** 2
@@ -107,9 +119,41 @@ def raycast(sx,sy,a,d = -1,color = -1):
 	else:
 		return True
 
-def update():
-	global done
+# simulation
 
+def events():
+	for event in pg.event.get():
+		if event.type == pg.QUIT:
+			pg.done = True
+			
+	if ui:
+		pg.display.flip()
+
+def run():
+	bot["pos"] = [250,250]
+	bot["angle"] = 45
+	
+	time = 1
+	
+	while not pg.done:
+		if ui and not trail:
+			draw((0,0,0))
+		
+		for i in range(speed):
+			time += 1
+			if not update() or time >= duration:
+				# collison happened
+				
+				return (duration + width) - time - dist(bot["pos"][0], bot["pos"][1], target[0], target[1]) 
+		
+		if ui:
+			draw(bot["color"])
+		
+		if events:
+			events()
+	
+
+def update():
 	# collison
 
 	a = math.radians(-bot["angle"])
@@ -135,7 +179,9 @@ def update():
 		bot["pos"][0] + w * cos - -h * sin,
 		bot["pos"][1] + w * sin + -h * cos,
 		bot["angle"], bot["size"][1]
-	): return
+	): return False
+	
+	#get input
 
 	ultra_LS = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] + 45)
 	ultra_LC = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] + 10)
@@ -164,27 +210,17 @@ def update():
 
 	bot["pos"][0] += int(speed * math.sin(math.radians(bot["angle"])))
 	bot["pos"][1] += int(speed * math.cos(math.radians(bot["angle"])))
+	
+	return True
 
 # pygame setup
 
 pg.init()
-screen = pg.display.set_mode((width, height))
-done = False
+pg.done = False
 
-# draw map
-
-for x in range(width):
-	for y in range(height):
-		if map[x, y] == 1:
-			screen.set_at((x,y), (255,255,255))
-
-pg.draw.circle(screen, (0,255,0), target, 5, 2)
-
-# draw bot
+# graphics
 
 def draw(color):
-	pg.transform.rotate(screen, bot["angle"])
-
 	a = math.radians(-bot["angle"])
 	sin = math.sin(a)
 	cos = math.cos(a)
@@ -199,21 +235,17 @@ def draw(color):
 		bot["pos"] + np.array([ w * cos -  h * sin,  w * sin +  h * cos])
 	])
 
+if ui:
+	screen = pg.display.set_mode((width, height))
+
+	for x in range(width):
+		for y in range(height):
+			if map[x, y] == 1:
+				screen.set_at((x,y), (255,255,255))
+
+	pg.draw.circle(screen, (0,255,0), target, 5, 2)
+
 # main loop
 
-speed = 5
-
-#for a in range(0,360,10): raycast(750,250,a,100,(255,0,0))
-#for a in range(0,360,10): raycast(500,500,a, 100,(255,0,0))
-
-while not done:
-	for event in pg.event.get():
-		if event.type == pg.QUIT:
-			done = True
-
-	draw((0,0,0))
-	for i in range(speed):
-		update()
-	draw((0,0,255))
-
-	pg.display.flip()
+while not pg.done:
+	print(run())

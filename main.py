@@ -33,78 +33,124 @@ bot = {
 target = [750, 750]
 
 def dist(xi,yi,xii,yii):
-	sq1 = (xi-xii)*(xi-xii)
-	sq2 = (yi-yii)*(yi-yii)
+	sq1 = (xi-xii) ** 2
+	sq2 = (yi-yii) ** 2
 	return math.sqrt(sq1 + sq2)
 
 def inrange(x,y):
 	return x >= 0 and y >= 0 and x < width and y < height
 
-def raycast(sx,sy,a,d = -1):
-	if a == 180:
+def raycastcheak(sx,sy,x,y,d,color):
+	if not inrange(x, y):
+		return "break"
+
+	if d != -1 and dist(sx, sy, x, y) >= d:
+		return "break"
+
+	if color != -1:
+		screen.set_at((x,y), color)
+
+	if map[x, y] == 1:
+		if d != -1:
+			return False
+		return dist(sx, sy, x, y)
+
+def raycast(sx,sy,a,d = -1,color = -1):
+	sx = int(sx)
+	sy = int(sy)
+
+	a -= 90
+
+	while a > 360:
+		a -= 360
+	while a < 0:
+		a  += 360
+
+	if a == 90 or a == -270:
 		x = sx
-		for y in range(sy, 0, -1):
-			if not inrange(x, y):
+		for y in range(0, sy):
+			ret = raycastcheak(sx,sy,x,y,d,color)
+			if ret == "break":
 				break
-			if d != -1 and dist(sx, sy, x, y) < d:
-				break
-			if map[x, y] == 1:
-				if d != -1:
-					return False
-				return dist(sx, sy, x, y)
-	elif a > 0:
-		for x in range(0, width - sx):
-			y = sx + math.floor(x * math.tan(math.radians(a)))
-			if not inrange(x, y):
-				break
-			if d != -1 and dist(sx, sy, x, y):
-				return False
-			if map[x, y] == 1:
-				if d != -1:
-					return False
-				return dist(sx, sy, x, y)
-	elif a < 0:
-		for x in range(0, sx):
-			y = sx - math.floor(math.fabs(x) * math.tan(math.radians(a)))
-			if not inrange(x, y):
-				break
-			if d != -1 and dist(sx, sy, x, y):
-				return False
-			if map[x, y] == 1:
-				if d != -1:
-					return False
-				return dist(sx, sy, x, y)
-	elif a == 0:
+			elif ret is not None:
+				return ret
+	elif a == -90 or a == 270:
 		x = sx
 		for y in range(sy, height):
-			if not inrange(x, y):
+			ret = raycastcheak(sx,sy,x,y,d,color)
+			if ret == "break":
 				break
-			if d != -1 and dist(sx, sy, x, y):
-				return False
-			if map[x, y] == 1:
-				if d != -1:
-					return False
-				return dist(sx, sy, x, y)
+			elif ret is not None:
+				return ret
+	elif a < 90 or a > 270:
+		s = math.tan(math.radians(a))
+		for x in range(sx, width):
+			y = sy + math.floor((sx - x) * s)
+
+			ret = raycastcheak(sx,sy,x,y,d,color)
+			if ret == "break":
+				break
+			elif ret is not None:
+				return ret
+	elif a > 90 or a < 270:
+		s = math.tan(math.radians(a))
+		for x in range(0, sx):
+			y = sy + math.floor((sx - x) * s)
+
+			ret = raycastcheak(sx,sy,x,y,d,color)
+			if ret == "break":
+				break
+			elif ret is not None:
+				return ret
 	if d == -1:
 		return 100
 	else:
 		return True
 
 def update():
+	global done
+
+	# collison
+
+	a = math.radians(-bot["angle"])
+	sin = math.sin(a)
+	cos = math.cos(a)
+
+	w = bot["size"][0] / 2
+	h = bot["size"][1] / 2
+	
+	if not raycast(
+		bot["pos"][0] + -w * cos - h * sin,
+		bot["pos"][1] + -w * sin + h * cos,
+		bot["angle"] + 90, bot["size"][0]
+	) or not raycast(
+		bot["pos"][0] + -w * cos - h * sin,
+		bot["pos"][1] + -w * sin + h * cos,
+		bot["angle"] - 180, bot["size"][1]
+	) or not raycast(
+		bot["pos"][0] + w * cos - -h * sin,
+		bot["pos"][1] + w * sin + -h * cos,
+		bot["angle"] - 90, bot["size"][0]
+	) or not raycast(
+		bot["pos"][0] + w * cos - -h * sin,
+		bot["pos"][1] + w * sin + -h * cos,
+		bot["angle"], bot["size"][1]
+	): return
+
 	ultra_LS = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] + 45)
 	ultra_LC = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] + 10)
 	ultra_FC = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] + 0)
 	ultra_RC = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] - 10)
 	ultra_RS = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] - 45)
 
-	## start nural magic ##
+	# nural magic
 
 	servo_FL = random.randint(-1, 3)
 	servo_FR = random.randint(-1, 3)
 	servo_BL = random.randint(-1, 3)
 	servo_BR = random.randint(-1, 3)
 
-	## end nutal magic ##
+	# move bot
 
 	LS = servo_FL + servo_BL
 	RS = servo_FR + servo_BR
@@ -119,7 +165,7 @@ def update():
 	bot["pos"][0] += int(speed * math.sin(math.radians(bot["angle"])))
 	bot["pos"][1] += int(speed * math.cos(math.radians(bot["angle"])))
 
-## pygame stuff ##
+# pygame setup
 
 pg.init()
 screen = pg.display.set_mode((width, height))
@@ -155,13 +201,19 @@ def draw(color):
 
 # main loop
 
+speed = 5
+
+#for a in range(0,360,10): raycast(750,250,a,100,(255,0,0))
+#for a in range(0,360,10): raycast(500,500,a, 100,(255,0,0))
+
 while not done:
 	for event in pg.event.get():
 		if event.type == pg.QUIT:
 			done = True
 
 	draw((0,0,0))
-	update()
+	for i in range(speed):
+		update()
 	draw((0,0,255))
 
 	pg.display.flip()

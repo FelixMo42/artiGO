@@ -4,8 +4,8 @@ ArtiGO is an AI made with tenserFlow to control a robot from point A to point B.
 
 ### Libraries:
 
-- tensorflow: www.tensorflow.org
-- numpy: www.numpy.org
-- pygame: www.pygame.org
+- tensorflow: https://www.tensorflow.org
+- numpy: https://www.numpy.org
+- pygame: https://www.pygame.org
 
-- arduino redBoard: pygame
+- arduino redBoard: https://github.com/sparkfun/Arduino_Boards

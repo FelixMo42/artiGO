@@ -11,4 +11,4 @@ ArtiGO is an AI made with tenserFlow to control a robot from point A to point B.
 
 ### Robot
 
-![Alt text](robot.png)
+![Image of Robot not found, sorry about that!](robot.jpg?graw=True "Robot")

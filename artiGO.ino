@@ -25,10 +25,10 @@ int BL_US = A5;
 int outputs[] = {
     FR_M_CL, FR_M_CCL, FR_M_S,
     FL_M_CL, FL_M_CCL, FR_M_S,
-    
+
     BR_M_CL, BR_M_CCL, BR_M_S,
     BL_M_CL, BL_M_CCL, BR_M_S,
-    
+
     TRIG
 };
 
@@ -38,7 +38,7 @@ int inputs[] = {
 
 void setup() {
   Serial.begin(9600);
-  
+
   for (int port : outputs) {
     pinMode(port, OUTPUT);
   }
@@ -57,7 +57,7 @@ int dist() {
 void set(String m, int s) {
   if (m.equals("FL")) {
     analogWrite(FL_M_S, s);
-    
+
     if (s > 0) {
       digitalWrite(FL_M_CL, HIGH);
       digitalWrite(FL_M_CCL, LOW);
@@ -70,7 +70,7 @@ void set(String m, int s) {
     }
   } else if (m.equals("FR")) {
     analogWrite(FR_M_S, s);
-    
+
     if (s > 0) {
       digitalWrite(FR_M_CL, HIGH);
       digitalWrite(FR_M_CCL, LOW);
@@ -83,7 +83,7 @@ void set(String m, int s) {
     }
   } else if (m.equals("BL")) {
     analogWrite(BL_M_S, s);
-    
+
     if (s > 0) {
       digitalWrite(BL_M_CL, HIGH);
       digitalWrite(BL_M_CCL, LOW);
@@ -96,7 +96,7 @@ void set(String m, int s) {
     }
   } else if (m.equals("BR")) {
     analogWrite(BR_M_S, s);
-    
+
     if (s > 0) {
       digitalWrite(BR_M_CL, HIGH);
       digitalWrite(BR_M_CCL, LOW);
@@ -114,20 +114,14 @@ void loop() {
   int d = 0;
   for (int i = 0; i < 5; i++) {
     int n = dist();
-    //Serial.println(n);
     if (n > 100) {
       d += n;
     }
     delay(15);
   }
   d /= 5;
-  
-  Serial.println(d);
 
-  //set("FL", 100);
-  //set("FR", 100);
-  //set("BL", 100);
-  //set("BR", 100);
+  Serial.println(d);
 
   if (d > 500) {
     set("FL", 100);
@@ -140,6 +134,6 @@ void loop() {
     set("BL", 0);
     set("BR", 0);
   }
-  
+
   delay(500);
 }

@@ -1,3 +1,12 @@
+OUTPUT_GRAPH = False
+MAX_EPISODE = 1000
+MAX_EP_STEPS = 200
+DISPLAY_REWARD_THRESHOLD = -100  # renders environment if total episode reward is greater then this threshold
+RENDER = False  # rendering wastes time
+GAMMA = 0.9
+LR_A = 0.001 # learning rate for actor
+LR_C = 0.01 # learning rate for critic
+
 ## prefs ##
 
 ui = True
@@ -19,6 +28,11 @@ import pygame as pg
 import random
 import math
 import time
+import threading
+import multiprocessing
+
+np.random.seed(2)
+tf.set_random_seed(2)
 
 ## create  map ##
 
@@ -33,18 +47,9 @@ def addRect(sx,sy,w,h):
 
 addRect(500 - 30,500 - 30,60,60)
 
-## creat simulation ##
-
-bot = {
-	"pos" : [250, 250],
-	"size" : [24, 60],
-	"angle" : 45,
-	"color" : [0,0,255]
-}
-
 target = [750, 750]
 
-## raycasting ##
+### ray casting ##
 
 def dist(xi,yi,xii,yii):
 	sq1 = (xi-xii) ** 2
@@ -121,41 +126,109 @@ def raycast(sx,sy,a,d = -1,color = -1):
 	else:
 		return True
 
-## tensorflow ##
+## creat bot ##
 
-class Bot:
-	def __init__(self, inputs, hidden, outputs):
-		self.input = tf.placeholder(shape=[None, inputs],dtype=tf.float32)
-		self.hidden_layer = tf.layers.dense(self.input, hidden, activation=tf.nn.relu)
-		self.raw_output = tf.layers.dense(self.hidden_layer, outputs, activation=None)
-		self.output = self.raw_output / 10000 * 10
+# actor in AC
+
+class Actor(object):
+	def __init__(self, sess, n_features, n_actions, action_bound, lr=0.0001):
+		self.sess = sess
+
+		self.s = tf.placeholder(tf.float32, [1, n_features], "state")
+		self.a = tf.placeholder(tf.float32, None, name="act")
+		self.td_error = tf.placeholder(tf.float32, None, name="td_error")  # TD_error
+
+		l1 = tf.layers.dense(
+			inputs=self.s,
+			units=30,  # number of hidden units
+			activation=tf.nn.relu,
+			kernel_initializer=tf.random_normal_initializer(0., .1),  # weights
+			bias_initializer=tf.constant_initializer(0.1),  # biases
+			name='l1'
+		)
+
+		mu = tf.layers.dense(
+			inputs=l1,
+			units=1,  # number of hidden units
+			activation=tf.nn.tanh,
+			kernel_initializer=tf.random_normal_initializer(0., .1),  # weights
+			bias_initializer=tf.constant_initializer(0.1),  # biases
+			name='mu'
+		)
+
+		sigma = tf.layers.dense(
+			inputs=l1,
+			units=1,  # output units
+			activation=tf.nn.softplus,  # get action probabilities
+			kernel_initializer=tf.random_normal_initializer(0., .1),  # weights
+			bias_initializer=tf.constant_initializer(1.),  # biases
+			name='sigma'
+		)
+		global_step = tf.Variable(0, trainable=False)
+		# self.e = epsilon = tf.train.exponential_decay(2., global_step, 1000, 0.9)
+		self.mu, self.sigma = tf.squeeze(mu*2), tf.squeeze(sigma+0.1)
+		self.normal_dist = tf.distributions.Normal(self.mu, self.sigma)
+
+		self.action = tf.clip_by_value(self.normal_dist.sample(n_actions), action_bound[0], action_bound[1])
+
+		with tf.name_scope('exp_v'):
+			log_prob = self.normal_dist.log_prob(self.a)  # loss without advantage
+			self.exp_v = log_prob * self.td_error  # advantage (TD_error) guided loss
+			# Add cross entropy cost to encourage exploration
+			self.exp_v += 0.01*self.normal_dist.entropy()
+
+		with tf.name_scope('train'):
+			self.train_op = tf.train.AdamOptimizer(lr).minimize(-self.exp_v, global_step)	# min(v) = max(-v)
+
+	def learn(self, s, a, td):
+		feed_dict = {self.s: s, self.a: a, self.td_error: td}
+		_, exp_v = self.sess.run([self.train_op, self.exp_v], feed_dict)
+		return exp_v
+
+	def choose_action(self, s):
+		return self.sess.run(self.action, {self.s: s})  # get probabilities for all actions
+
+
+class Critic(object):
+	def __init__(self, sess, n_features, lr=0.01):
+		self.sess = sess
+		with tf.name_scope('inputs'):
+			self.s = tf.placeholder(tf.float32, [1, n_features], "state")
+			self.v_ = tf.placeholder(tf.float32, [1, 1], name="v_next")
+			self.r = tf.placeholder(tf.float32, name='r')
+
+		with tf.variable_scope('Critic'):
+			l1 = tf.layers.dense(
+				inputs=self.s,
+				units=30,  # number of hidden units
+				activation=tf.nn.relu,
+				kernel_initializer=tf.random_normal_initializer(0., .1),  # weights
+				bias_initializer=tf.constant_initializer(0.1),  # biases
+				name='l1'
+			)
+
+			self.v = tf.layers.dense(
+				inputs=l1,
+				units=1,  # output units
+				activation=None,
+				kernel_initializer=tf.random_normal_initializer(0., .1),  # weights
+				bias_initializer=tf.constant_initializer(0.1),  # biases
+				name='V'
+			)
+
+		with tf.variable_scope('squared_TD_error'):
+			self.td_error = tf.reduce_mean(self.r + GAMMA * self.v_ - self.v)
+			self.loss = tf.square(self.td_error)	# TD_error = (r+gamma*V_next) - V_eval
+		with tf.variable_scope('train'):
+			self.train_op = tf.train.AdamOptimizer(lr).minimize(self.loss)
+
+	def learn(self, s, r, s_):
+		v_ = self.sess.run(self.v, {self.s: s_})
+		td_error, _ = self.sess.run([self.td_error, self.train_op],
+										  {self.s: s, self.v_: v_, self.r: r})
+		return td_error
 
 tf.reset_default_graph()
-
-class TrainingBot(Bot):
-	def __init__(self, inputs, hidden, outputs, optimizer=tf.train.AdamOptimizer(learning_rate=1e-2)):
-		supper.__init__(inputs, hidden, outputs)
-		self.reward = tf.placeholder(shape=[None], dtype=tf.float32)
-		self.action_chosen = tf.placeholder(shape=[None], dtype=tf.int32)
-		self.cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=self.output,labels=self.outputs)
-
-		self.update = optimizer.apply_gradients(zip(self.gradient_placeholders, variables))
-		super().__init__(inputs, hidden, outputs)
-
-		self.reward = tf.placeholder(shape=[None], dtype=tf.float32)
-
-		self.cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.output, labels=self.one_hot_actions)
-        self.loss = tf.reduce_mean(self.cross_entropy * self.reward)
-
-		variables = tf.trainable_variables()
-		self.gradient_placeholders = []
-
-		for index, variable in enumerate(variables):
-            placeholder = tf.placeholder(dtype=tf.float32)
-            self.gradient_placeholders.append(placeholder)
-
-		self.gradients = tf.gradients(self.loss, variables)
-        self.update = optimizer.apply_gradients(zip(self.gradient_placeholders, variables))
 
 ## simulation ##
 
@@ -167,9 +240,22 @@ def events():
 	if ui:
 		pg.display.flip()
 
+def info():
+	ultra_LS = raycast(bot.pos[0], bot.pos[0], bot.angle + 45) * 10
+	ultra_LC = raycast(bot.pos[0], bot.pos[0], bot.angle + 10) * 10
+	ultra_FC = raycast(bot.pos[0], bot.pos[0], bot.angle + 0) * 10
+	ultra_RC = raycast(bot.pos[0], bot.pos[0], bot.angle - 10) * 10
+	ultra_RS = raycast(bot.pos[0], bot.pos[0], bot.angle - 45) * 10
+
+	return [[
+		ultra_LS, ultra_LC, ultra_FC, ultra_RC, ultra_RS,
+		bot.pos[0], bot.pos[1],
+		target[0], target[1]
+	]]
+
 def run():
-	bot["pos"] = [250,250]
-	bot["angle"] = 45
+	bot.pos = [250,250]
+	bot.angle = 45
 
 	time = 1
 
@@ -177,63 +263,58 @@ def run():
 		if ui and not trail:
 			draw((0,0,0))
 
+		init = info()
+
 		for i in range(speed):
 			time += 1
-			if not update() or time >= duration:
-				return (duration + width) - time - dist(bot["pos"][0], bot["pos"][1], target[0], target[1])
+			if not update(init, time) or time >= duration:
+				return (duration + width) - (time + dist(bot.pos[0], bot.pos[1], target[0], target[1]))
 
 		if ui:
-			draw(bot["color"])
+			draw(bot.color)
 
 		if events:
 			events()
 
-def update():
+def update(init, t):
 	# collison
 
-	a = math.radians(-bot["angle"])
+	a = math.radians(-bot.angle)
 	sin = math.sin(a)
 	cos = math.cos(a)
 
-	w = bot["size"][0] / 2
-	h = bot["size"][1] / 2
+	w = bot.size[0] / 2
+	h = bot.size[1] / 2
 
 	if not raycast(
-		bot["pos"][0] + -w * cos - h * sin,
-		bot["pos"][1] + -w * sin + h * cos,
-		bot["angle"] + 90, bot["size"][0]
+		bot.pos[0] + -w * cos - h * sin,
+		bot.pos[1] + -w * sin + h * cos,
+		bot.angle + 90, bot.size[0]
 	) or not raycast(
-		bot["pos"][0] + -w * cos - h * sin,
-		bot["pos"][1] + -w * sin + h * cos,
-		bot["angle"] - 180, bot["size"][1]
+		bot.pos[0] + -w * cos - h * sin,
+		bot.pos[1] + -w * sin + h * cos,
+		bot.angle - 180, bot.size[1]
 	) or not raycast(
-		bot["pos"][0] + w * cos - -h * sin,
-		bot["pos"][1] + w * sin + -h * cos,
-		bot["angle"] - 90, bot["size"][0]
+		bot.pos[0] + w * cos - -h * sin,
+		bot.pos[1] + w * sin + -h * cos,
+		bot.angle - 90, bot.size[0]
 	) or not raycast(
-		bot["pos"][0] + w * cos - -h * sin,
-		bot["pos"][1] + w * sin + -h * cos,
-		bot["angle"], bot["size"][1]
+		bot.pos[0] + w * cos - -h * sin,
+		bot.pos[1] + w * sin + -h * cos,
+		bot.angle, bot.size[1]
 	): return False
-
-	#get input
-
-	ultra_LS = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] + 45) * 10
-	ultra_LC = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] + 10) * 10
-	ultra_FC = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] + 0) * 10
-	ultra_RC = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] - 10) * 10
-	ultra_RS = raycast(bot["pos"][0], bot["pos"][0], bot["angle"] - 45) * 10
 
 	# nural magic
 
-	output = sess.run(bot["ai"].output,feed_dict={bot["ai"].input:[[
-		ultra_LS, ultra_LC, ultra_FC, ultra_RC, ultra_RS,
-		bot["pos"][0], bot["pos"][1],
-		target[0], target[1]
-	]]})
+	input = info()
+	output = bot.choose_action(input)
 
-	servo_FL, servo_FR, servo_BL, servo_BR = output[0]
-	print(output)
+	servo_FL, servo_FR, servo_BL, servo_BR = output
+
+	reward = (t - duration) + (width - dist(bot.pos[0], bot.pos[1], target[0], target[1]))
+
+	td_error = critic.learn(init, reward, input)
+	bot.learn(init, output, td_error)
 
 	# move bot
 
@@ -241,14 +322,14 @@ def update():
 	RS = servo_FR + servo_BR
 
 	if LS > RS:
-		bot["angle"] += (LS - RS)
+		bot.angle += (LS - RS)
 	elif RS > LS:
-		bot["angle"] -= (RS - LS)
+		bot.angle -= (RS - LS)
 
 	speed = (LS + RS) / 4
 
-	bot["pos"][0] += int(speed * math.sin(math.radians(bot["angle"])))
-	bot["pos"][1] += int(speed * math.cos(math.radians(bot["angle"])))
+	bot.pos[0] += int(speed * math.sin(math.radians(bot.angle)))
+	bot.pos[1] += int(speed * math.cos(math.radians(bot.angle)))
 
 	return True
 
@@ -262,18 +343,18 @@ if ui or events:
 ## graphics ##
 
 def draw(color):
-	a = math.radians(-bot["angle"])
+	a = math.radians(-bot.angle)
 	sin = math.sin(a)
 	cos = math.cos(a)
 
-	w = bot["size"][0] / 2
-	h = bot["size"][1] / 2
+	w = bot.size[0] / 2
+	h = bot.size[1] / 2
 
 	pg.draw.lines(screen, color, True, [
-		bot["pos"] + np.array([-w * cos -  h * sin, -w * sin +  h * cos]),
-		bot["pos"] + np.array([-w * cos - -h * sin, -w * sin + -h * cos]),
-		bot["pos"] + np.array([ w * cos - -h * sin,  w * sin + -h * cos]),
-		bot["pos"] + np.array([ w * cos -  h * sin,  w * sin +  h * cos])
+		bot.pos + np.array([-w * cos -  h * sin, -w * sin +  h * cos]),
+		bot.pos + np.array([-w * cos - -h * sin, -w * sin + -h * cos]),
+		bot.pos + np.array([ w * cos - -h * sin,  w * sin + -h * cos]),
+		bot.pos + np.array([ w * cos -  h * sin,  w * sin +  h * cos])
 	])
 
 if ui:
@@ -286,11 +367,17 @@ if ui:
 
 ## main loop ##
 
-bot["ai"] = Bot(9, 18, 4)
-
-init = tf.global_variables_initializer()
-
 with tf.Session() as sess:
+
+	bot = Actor(sess, n_features=9, n_actions=4, lr=0.01, action_bound=[-255, 255])
+	critic = Critic(sess, n_features=9, lr=0.01)
+	bot.pos = [250,250]
+	bot.size = [24, 60]
+	bot.angle = 45
+	bot.color = [0,0,255]
+
+	init = tf.global_variables_initializer()
+
 	sess.run(init)
 
 	while not pg.done:

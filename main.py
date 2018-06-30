@@ -11,7 +11,7 @@ LR_C = 0.01 # learning rate for critic
 
 ui = True
 trail = True
-events = True
+do_events = True
 
 duration = 2000
 speed = 10
@@ -31,8 +31,8 @@ import time
 import threading
 import multiprocessing
 
-np.random.seed(2)
-tf.set_random_seed(2)
+np.random.seed(20)
+tf.set_random_seed(20)
 
 ## create  map ##
 
@@ -126,9 +126,7 @@ def raycast(sx,sy,a,d = -1,color = -1):
 	else:
 		return True
 
-## creat bot ##
-
-# actor in AC
+## tensorflow models ##
 
 class Actor(object):
 	def __init__(self, sess, n_features, n_actions, action_bound, lr=0.0001):
@@ -187,7 +185,6 @@ class Actor(object):
 
 	def choose_action(self, s):
 		return self.sess.run(self.action, {self.s: s})  # get probabilities for all actions
-
 
 class Critic(object):
 	def __init__(self, sess, n_features, lr=0.01):
@@ -249,15 +246,16 @@ def info():
 
 	return [[
 		ultra_LS, ultra_LC, ultra_FC, ultra_RC, ultra_RS,
-		bot.pos[0], bot.pos[1],
+		bot.pos[0], bot.pos[1], bot.angle,
 		target[0], target[1]
 	]]
 
 def run():
 	bot.pos = [250,250]
-	bot.angle = 45
+	bot.angle = random.randint(1, 360)
 
 	time = 1
+	total = 0
 
 	while not pg.done:
 		if ui and not trail:
@@ -267,13 +265,15 @@ def run():
 
 		for i in range(speed):
 			time += 1
-			if not update(init, time) or time >= duration:
-				return (duration + width) - (time + dist(bot.pos[0], bot.pos[1], target[0], target[1]))
+			done, reward = update(init, time)
+			total += reward
+			if done or time >= duration:
+				return total / time
 
 		if ui:
 			draw(bot.color)
 
-		if events:
+		if do_events:
 			events()
 
 def update(init, t):
@@ -285,6 +285,15 @@ def update(init, t):
 
 	w = bot.size[0] / 2
 	h = bot.size[1] / 2
+
+	#end state met
+
+	goal = False
+
+	if dist(bot.pos[0], bot.pos[1], target[0], target[1]) < bot.size[0]:
+		goal = True
+
+	collison = False
 
 	if not raycast(
 		bot.pos[0] + -w * cos - h * sin,
@@ -302,7 +311,8 @@ def update(init, t):
 		bot.pos[0] + w * cos - -h * sin,
 		bot.pos[1] + w * sin + -h * cos,
 		bot.angle, bot.size[1]
-	): return False
+	):
+		collison = True
 
 	# nural magic
 
@@ -311,10 +321,18 @@ def update(init, t):
 
 	servo_FL, servo_FR, servo_BL, servo_BR = output
 
-	reward = (t - duration) + (width - dist(bot.pos[0], bot.pos[1], target[0], target[1]))
+	if collison:
+		reward = -1000
+	elif goal:
+		reward = 1000
+	else:
+		reward = (width - dist(bot.pos[0], bot.pos[1], target[0], target[1]))
 
 	td_error = critic.learn(init, reward, input)
 	bot.learn(init, output, td_error)
+
+	if collison or goal:
+		return True, reward
 
 	# move bot
 
@@ -331,11 +349,11 @@ def update(init, t):
 	bot.pos[0] += int(speed * math.sin(math.radians(bot.angle)))
 	bot.pos[1] += int(speed * math.cos(math.radians(bot.angle)))
 
-	return True
+	return False, reward
 
 ## pygame setup ##
 
-if ui or events:
+if ui or do_events:
 	pg.init()
 	pg.done = False
 	screen = pg.display.set_mode((width, height))
@@ -368,9 +386,11 @@ if ui:
 ## main loop ##
 
 with tf.Session() as sess:
+	n_features = 10
 
-	bot = Actor(sess, n_features=9, n_actions=4, lr=0.01, action_bound=[-255, 255])
-	critic = Critic(sess, n_features=9, lr=0.01)
+	bot = Actor(sess, n_features=n_features, n_actions=4, lr=0.01, action_bound=[-5, 5])
+	critic = Critic(sess, n_features=n_features, lr=0.001)
+
 	bot.pos = [250,250]
 	bot.size = [24, 60]
 	bot.angle = 45
@@ -381,4 +401,10 @@ with tf.Session() as sess:
 	sess.run(init)
 
 	while not pg.done:
+		#ui = True
+		#do_events = True
 		print(run())
+		#ui = False
+		#do_events = True
+		#for i in range(10):
+		#	run()

@@ -1,8 +1,13 @@
+## imports ##
+
 import gym
 import numpy as np
+import queue
+import pygame as pg
 import math
 import random
 import time
+import threading
 
 ## create  map ##
 
@@ -22,7 +27,7 @@ addRect(500 - 30,500 - 30,60,60)
 
 target = [750, 750]
 
-### ray casting ##
+## ray casting ##
 
 def dist(xi,yi,xii,yii):
     sq1 = (xi-xii) ** 2
@@ -99,6 +104,30 @@ def raycast(sx,sy,a,d = -1,color = -1):
     else:
         return True
 
+## graphics ##
+
+pg.init()
+screen = pg.display.set_mode((width, height))
+q = queue.Queue()
+
+for x in range(width):
+    for y in range(height):
+        if map[x, y] == 1:
+            screen.set_at((x,y), (255,255,255))
+
+pg.draw.circle(screen, (0,255,0), target, 5, 2)
+
+pg.draw.circle(screen, (0,255,0), target, 5, 2)
+
+def pgUpdate():
+    while True:
+        item = q.get()
+        item()
+        q.task_done()
+
+t1 = threading.Thread(target=pgUpdate)
+t1.start()
+
 ## gym ##
 
 class BotEnv(gym.Env):
@@ -111,9 +140,28 @@ class BotEnv(gym.Env):
 
     total = 0
     time = 0
+    p = 0
+
 
     def __init__(self):
         pass
+
+    def draw(self):
+        a = math.radians(-self.angle)
+        sin = math.sin(a)
+        cos = math.cos(a)
+
+        w = self.size[0] / 2
+        h = self.size[1] / 2
+
+        pg.draw.lines(screen, self.color, True, [
+            self.pos + np.array([-w * cos -  h * sin, -w * sin +  h * cos]),
+            self.pos + np.array([-w * cos - -h * sin, -w * sin + -h * cos]),
+            self.pos + np.array([ w * cos - -h * sin,  w * sin + -h * cos]),
+            self.pos + np.array([ w * cos -  h * sin,  w * sin +  h * cos])
+        ])
+
+        pg.display.flip()
 
     def _step(self, action):
         goal = False
@@ -150,7 +198,7 @@ class BotEnv(gym.Env):
             collison = True
 
         done = goal or collison
-        if self.time > 200:
+        if self.time > 1000:
             done = True
         if not done:
             self._take_action(action)
@@ -159,6 +207,10 @@ class BotEnv(gym.Env):
 
         self.total += reward
         self.time += 1
+
+        if self.time % 5 == 0:
+            q.put(self.draw)
+
         return ob, reward, done, {}
 
     def _reset(self):
@@ -195,13 +247,16 @@ class BotEnv(gym.Env):
         reward = 0
 
         if collison:
-            reward = -1000
+            reward = -100
         elif goal:
-            reward = 1000
+            reward = 10000
         else:
-            reward = (width - dist(self.pos[0], self.pos[1], target[0], target[1]))
+            d = (width - dist(self.pos[0], self.pos[1], target[0], target[1]))
+            reward = d - self.p
+            self.p = d
 
-        reward /= 10
+
+        #reward /= 10
 
         return reward
 

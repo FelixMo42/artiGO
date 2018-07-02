@@ -54,8 +54,8 @@ GLOBAL_NET_SCOPE = 'Global_Net'
 UPDATE_GLOBAL_ITER = 10
 GAMMA = 0.999
 ENTROPY_BETA = 0.005
-LR_A = 0.00002  # learning rate for actor
-LR_C = 0.0001  # learning rate for critic
+LR_A = 0.002  # learning rate for actor
+LR_C = 0.01  # learning rate for critic
 GLOBAL_RUNNING_R = []
 GLOBAL_EP = 0  # will increase during training, stop training when it >= MAX_GLOBAL_EP
 
@@ -63,7 +63,7 @@ env = gym.make(GAME)
 
 N_S = 10#env.observation_space.shape[0]
 N_A = 4#env.action_space.shape[0]
-A_BOUND = [-5, 5]
+A_BOUND = [-10, 10]
 
 # print(env.unwrapped.hull.position[0])
 # exit()
@@ -147,8 +147,7 @@ class ACNet(object):
             self.v = v.outputs
 
     def update_global(self, feed_dict):  # run by a local
-        _, _, t = sess.run([self.update_a_op, self.update_c_op, self.test],
-                           feed_dict)  # local grads applies to global net
+        _, _, t = sess.run([self.update_a_op, self.update_c_op, self.test], feed_dict)  # local grads applies to global net
         return t
 
     def pull_global(self):  # run by a local
@@ -181,7 +180,7 @@ class Worker(object):
         total_step = 1
         buffer_s, buffer_a, buffer_r = [], [], []
         while not COORD.should_stop() and GLOBAL_EP < MAX_GLOBAL_EP:
-            s = self.env.reset()
+            s = self.env._reset(GLOBAL_EP)
             ep_r = 0
             while True:
                 # visualize Worker_0 during training

@@ -1,3 +1,6 @@
+draws = 5
+anglediv = 6
+maxtime = 1000
 ## imports ##
 
 import gym
@@ -15,15 +18,11 @@ width = 1000
 height = 1000
 
 map = np.zeros((width,height), dtype=int)
-map[:,0] = 1
-map[:,height - 1] = 1
-map[0,:] = 1
-map[width - 1,:] = 1
 
 def addRect(sx,sy,w,h):
     map[sx : sx + w,sy : sy + h] = 1
 
-addRect(500 - 30,500 - 30,60,60)
+#addRect(500 - 30,500 - 30,60,60)
 
 target = [750, 750]
 
@@ -41,7 +40,7 @@ def raycastcheak(sx,sy,x,y,d,color):
     if not inrange(x, y):
         return "break"
 
-    if d != -1 and dist(sx, sy, x, y) >= d:
+    if d != -1 and not inrange(x,y):
         return "break"
 
     if color != -1:
@@ -63,9 +62,17 @@ def raycast(sx,sy,a,d = -1,color = -1):
     while a < 0:
         a  += 360
 
-    if a == 90 or a == -270:
+    if a == 90:
         x = sx
-        for y in range(0, sy):
+        for y in range(d and sy - d or 0, sy):
+            ret = raycastcheak(sx,sy,x,y,d,color)
+            if ret == "break":
+                break
+            elif ret is not None:
+                return ret
+    if a == -270:
+        x = sx
+        for y in range(sy, d and sy + d or height):
             ret = raycastcheak(sx,sy,x,y,d,color)
             if ret == "break":
                 break
@@ -73,7 +80,7 @@ def raycast(sx,sy,a,d = -1,color = -1):
                 return ret
     elif a == -90 or a == 270:
         x = sx
-        for y in range(sy, height):
+        for y in range(sy, d and sy + d or height):
             ret = raycastcheak(sx,sy,x,y,d,color)
             if ret == "break":
                 break
@@ -81,7 +88,7 @@ def raycast(sx,sy,a,d = -1,color = -1):
                 return ret
     elif a < 90 or a > 270:
         s = math.tan(math.radians(a))
-        for x in range(sx, width):
+        for x in range(sx, d and sx + d or width):
             y = sy + math.floor((sx - x) * s)
 
             ret = raycastcheak(sx,sy,x,y,d,color)
@@ -91,7 +98,7 @@ def raycast(sx,sy,a,d = -1,color = -1):
                 return ret
     elif a > 90 or a < 270:
         s = math.tan(math.radians(a))
-        for x in range(0, sx):
+        for x in range(d and sx - d or 0, sx):
             y = sy + math.floor((sx - x) * s)
 
             ret = raycastcheak(sx,sy,x,y,d,color)
@@ -115,20 +122,43 @@ for x in range(width):
         if map[x, y] == 1:
             screen.set_at((x,y), (255,255,255))
 
-pg.draw.circle(screen, (0,255,0), target, 5, 2)
-
-pg.draw.circle(screen, (0,255,0), target, 5, 2)
+pg.draw.circle(screen, (0,255,0), target, 24, 2)
 
 def pgUpdate():
     while True:
         item = q.get()
-        item()
+        item(1)
         q.task_done()
 
 t1 = threading.Thread(target=pgUpdate)
 t1.start()
 
+def draw(pos,w,h,a,color):
+    a = math.radians(-a)
+    sin = math.sin(a)
+    cos = math.cos(a)
+
+    w /= 2
+    h /= 2
+
+    pg.draw.lines(screen, color, True, [
+        pos + np.array([-w * cos -  h * sin, -w * sin +  h * cos]),
+        pos + np.array([-w * cos - -h * sin, -w * sin + -h * cos]),
+        pos + np.array([ w * cos - -h * sin,  w * sin + -h * cos]),
+        pos + np.array([ w * cos -  h * sin,  w * sin +  h * cos])
+    ])
+
+    pg.display.flip()
+
 ## gym ##
+
+def rangeify(n):
+    if n > 0 and n < 1:
+        return 1
+    elif n < 0 and n > -1:
+        return -1
+    else:
+        return n
 
 class BotEnv(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -141,33 +171,21 @@ class BotEnv(gym.Env):
     total = 0
     time = 0
     p = 0
-
+    sim = 0
+    end = "None"
 
     def __init__(self):
         pass
 
-    def draw(self):
-        a = math.radians(-self.angle)
-        sin = math.sin(a)
-        cos = math.cos(a)
-
-        w = self.size[0] / 2
-        h = self.size[1] / 2
-
-        pg.draw.lines(screen, self.color, True, [
-            self.pos + np.array([-w * cos -  h * sin, -w * sin +  h * cos]),
-            self.pos + np.array([-w * cos - -h * sin, -w * sin + -h * cos]),
-            self.pos + np.array([ w * cos - -h * sin,  w * sin + -h * cos]),
-            self.pos + np.array([ w * cos -  h * sin,  w * sin +  h * cos])
-        ])
-
-        pg.display.flip()
-
     def _step(self, action):
+        ## at goal ##
         goal = False
 
         if dist(self.pos[0], self.pos[1], target[0], target[1]) < self.size[0]:
             goal = True
+            self.end = "goal"
+
+        ## hit thing ##
 
         collison = False
 
@@ -196,47 +214,83 @@ class BotEnv(gym.Env):
             self.angle, self.size[1]
         ):
             collison = True
+            self.end = "collison"
 
-        done = goal or collison
-        if self.time > 1000:
-            done = True
+        ## out of bounds ##
+
+        outofbounds = False
+
+        if not inrange(self.pos[0], self.pos[1]):
+            outofbounds = True
+            self.end = "out of bounds"
+
+        ## time ##
+
+        self.time += 1
+
+        timeout = False
+
+        if self.time >= maxtime:
+            timeout = True
+            self.end = "time"
+
+        ## update stuff ##
+
+        done = goal or collison or outofbounds or timeout
+
         if not done:
             self._take_action(action)
+
+            if self.time % draws == 0:
+                q.put(self.draw(self.color))
+
         reward = self._get_reward(collison, goal)
         ob = self._get_info() #self.env.getState()
 
         self.total += reward
-        self.time += 1
-
-        if self.time % 5 == 0:
-            q.put(self.draw)
 
         return ob, reward, done, {}
 
-    def _reset(self):
+    def _reset(self, sim):
         if self.time != 0:
-            print("score: ", int(self.total / self.time), "\t| time: ", self.time)
+            print("sim: ", sim, "\t| score: ", int(self.total / self.time), "\t| time: ", self.time, "\t| end: ", self.end)
 
+        self.sim = sim
         self.pos = [250,250]
         self.angle = 45
         self.total = 0
         self.time = 0
+        self.color = [random.randint(0,255), random.randint(0,255), random.randint(0,255)]
+        self.end = "none"
 
         return self._get_info()
 
     def _render(self, mode='human', close=False):
         pass
 
+    def draw(self, color):
+        pos = self.pos
+        w = self.size[0]
+        h = self.size[1]
+        a = self.angle
+
+        return lambda x : draw(pos, w, h, a, color)
+
     def _take_action(self, action):
         servo_FL, servo_FR, servo_BL, servo_BR = action
+
+        servo_FL = rangeify(servo_FL)
+        servo_FR = rangeify(servo_FR)
+        servo_BL = rangeify(servo_BL)
+        servo_BR = rangeify(servo_BR)
 
         LS = servo_FL + servo_BL
         RS = servo_FR + servo_BR
 
         if LS > RS:
-            self.angle += (LS - RS)
+            self.angle += (LS - RS) / (2 * anglediv)
         elif RS > LS:
-            self.angle -= (RS - LS)
+            self.angle -= (RS - LS) / (2 * anglediv)
 
         speed = (LS + RS) / 4
 
@@ -246,15 +300,14 @@ class BotEnv(gym.Env):
     def _get_reward(self, collison, goal):
         reward = 0
 
-        if collison:
-            reward = -100
-        elif goal:
-            reward = 10000
+        #if collison:
+        #    reward = -100
+        if goal:
+            reward = 10000000000000
         else:
-            d = (width - dist(self.pos[0], self.pos[1], target[0], target[1]))
-            reward = d - self.p
-            self.p = d
-
+            d = dist(self.pos[0], self.pos[1], target[0], target[1])
+            reward = -(d ** 1.2) #** -2 #- self.p
+            #self.p = d
 
         #reward /= 10
 

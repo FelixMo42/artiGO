@@ -110,6 +110,7 @@ class BotEnv(gym.Env):
     color = [0,0,255]
 
     total = 0
+    time = 0
 
     def __init__(self):
         pass
@@ -148,22 +149,26 @@ class BotEnv(gym.Env):
         ):
             collison = True
 
-        done = target or collison
+        done = goal or collison
+        if self.time > 200:
+            done = True
         if not done:
             self._take_action(action)
         reward = self._get_reward(collison, goal)
         ob = self._get_info() #self.env.getState()
 
         self.total += reward
-
+        self.time += 1
         return ob, reward, done, {}
 
     def _reset(self):
-        print(self.total)
+        if self.time != 0:
+            print("score: ", int(self.total / self.time), "\t| time: ", self.time)
 
         self.pos = [250,250]
         self.angle = 45
         self.total = 0
+        self.time = 0
 
         return self._get_info()
 
@@ -195,6 +200,8 @@ class BotEnv(gym.Env):
             reward = 1000
         else:
             reward = (width - dist(self.pos[0], self.pos[1], target[0], target[1]))
+
+        reward /= 10
 
         return reward
 

@@ -1,36 +1,3 @@
-"""
-Asynchronous Advantage Actor Critic (A3C) with Continuous Action Space.
-
-Actor Critic History
-----------------------
-A3C > DDPG (for continuous action space) > AC
-
-Advantage
-----------
-Train faster and more stable than AC.
-
-Disadvantage
--------------
-Have bias.
-
-Reference
-----------
-MorvanZhou's tutorial: https://morvanzhou.github.io/tutorials/
-MorvanZhou's code: https://github.com/MorvanZhou/Reinforcement-learning-with-tensorflow/blob/master/experiments/Solve_BipedalWalker/A3C.py
-
-Environment
------------
-BipedalWalker-v2 : https://gym.openai.com/envs/BipedalWalker-v2
-
-Reward is given for moving forward, total 300+ points up to the far end.
-If the robot falls, it gets -100. Applying motor torque costs a small amount of
-points, more optimal agent will get better score. State consists of hull angle
-speed, angular velocity, horizontal speed, vertical speed, position of joints
-and joints angular speed, legs contact with ground, and 10 lidar rangefinder
-measurements. There's no coordinates in the state vector.
-
-"""
-
 import multiprocessing
 import threading
 import numpy as np
@@ -54,8 +21,8 @@ GLOBAL_NET_SCOPE = 'Global_Net'
 UPDATE_GLOBAL_ITER = 10
 GAMMA = 0.999
 ENTROPY_BETA = 0.005
-LR_A = 0.002  # learning rate for actor
-LR_C = 0.01  # learning rate for critic
+LR_A = 0.005  # learning rate for actor
+LR_C = 0.025  # learning rate for critic
 GLOBAL_RUNNING_R = []
 GLOBAL_EP = 0  # will increase during training, stop training when it >= MAX_GLOBAL_EP
 
@@ -63,7 +30,7 @@ env = gym.make(GAME)
 
 N_S = 10#env.observation_space.shape[0]
 N_A = 4#env.action_space.shape[0]
-A_BOUND = [-10, 10]
+A_BOUND = [-5, 10]
 
 # print(env.unwrapped.hull.position[0])
 # exit()

@@ -1,6 +1,7 @@
-draws = 5
+draws = 10
 anglediv = 6
 maxtime = 1000
+trail = False
 ## imports ##
 
 import gym
@@ -11,6 +12,7 @@ import math
 import random
 import time
 import threading
+import functools
 
 ## create  map ##
 
@@ -117,23 +119,28 @@ pg.init()
 screen = pg.display.set_mode((width, height))
 q = queue.Queue()
 
+background = pg.Surface([width, height])
+
 for x in range(width):
     for y in range(height):
         if map[x, y] == 1:
-            screen.set_at((x,y), (255,255,255))
+            Background.set_at((x,y), (255,255,255))
 
-pg.draw.circle(screen, (0,255,0), target, 24, 2)
+pg.draw.circle(background, (0,255,0), target, 24, 2)
 
 def pgUpdate():
+    c = 0
     while True:
         item = q.get()
-        item(1)
+        if trail:
+            screen.blit(background, (0,0), special_flags=pg.BLEND_MAX)
+        item()
         q.task_done()
 
 t1 = threading.Thread(target=pgUpdate)
 t1.start()
 
-def draw(pos,w,h,a,color):
+def draw(pos,w,h,a,color,line):
     a = math.radians(-a)
     sin = math.sin(a)
     cos = math.cos(a)
@@ -146,7 +153,7 @@ def draw(pos,w,h,a,color):
         pos + np.array([-w * cos - -h * sin, -w * sin + -h * cos]),
         pos + np.array([ w * cos - -h * sin,  w * sin + -h * cos]),
         pos + np.array([ w * cos -  h * sin,  w * sin +  h * cos])
-    ])
+    ], line)
 
     pg.display.flip()
 
@@ -165,7 +172,7 @@ class BotEnv(gym.Env):
 
     pos = [250,250]
     size = [24, 60]
-    angle = 45
+    angle = 45 + 180
     color = [0,0,255]
 
     total = 0
@@ -220,9 +227,11 @@ class BotEnv(gym.Env):
 
         outofbounds = False
 
+        '''
         if not inrange(self.pos[0], self.pos[1]):
             outofbounds = True
             self.end = "out of bounds"
+        '''
 
         ## time ##
 
@@ -239,10 +248,15 @@ class BotEnv(gym.Env):
         done = goal or collison or outofbounds or timeout
 
         if not done:
+            if not trail and self.time % draws == 0 and self.time != draws:
+                q.put(self.clear)
+
             self._take_action(action)
 
             if self.time % draws == 0:
-                q.put(self.draw(self.color))
+                q.put(self.drawFunc(self.color, 2))
+                if not trail:
+                    self.clear = self.drawFunc((0,0,0), 2)
 
         reward = self._get_reward(collison, goal)
         ob = self._get_info() #self.env.getState()
@@ -255,9 +269,12 @@ class BotEnv(gym.Env):
         if self.time != 0:
             print("sim: ", sim, "\t| score: ", int(self.total / self.time), "\t| time: ", self.time, "\t| end: ", self.end)
 
+        if not trail and self.time > draws:
+            q.put(self.clear)
+
         self.sim = sim
-        self.pos = [250,250]
-        self.angle = 45
+        self.pos = [random.randint(0,1000),random.randint(0,1000)]
+        self.angle = 45 + 180
         self.total = 0
         self.time = 0
         self.color = [random.randint(0,255), random.randint(0,255), random.randint(0,255)]
@@ -268,13 +285,16 @@ class BotEnv(gym.Env):
     def _render(self, mode='human', close=False):
         pass
 
-    def draw(self, color):
-        pos = self.pos
+    def drawFunc(self, color, line):
+        pos = [self.pos[0], self.pos[1]]
         w = self.size[0]
         h = self.size[1]
         a = self.angle
 
-        return lambda x : draw(pos, w, h, a, color)
+        def func():
+            draw(pos, w, h, a, color, line)
+
+        return func
 
     def _take_action(self, action):
         servo_FL, servo_FR, servo_BL, servo_BR = action
@@ -300,16 +320,15 @@ class BotEnv(gym.Env):
     def _get_reward(self, collison, goal):
         reward = 0
 
-        #if collison:
-        #    reward = -100
+        if collison:
+            reward -= 100
         if goal:
-            reward = 10000000000000
+            reward = 1000000000
         else:
             d = dist(self.pos[0], self.pos[1], target[0], target[1])
-            reward = -(d ** 1.2) #** -2 #- self.p
-            #self.p = d
-
-        #reward /= 10
+            reward -= d ** 2
+            #if d > dist(250,250 , target[0], target[1]):
+            #    reward *= 2
 
         return reward
 

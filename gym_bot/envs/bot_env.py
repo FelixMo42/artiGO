@@ -1,7 +1,10 @@
 draws = 10
-anglediv = 2
+anglediv = 4
 maxtime = 1000
 trail = True
+graphics = False
+graphing = True
+avg = 10
 
 ## imports ##
 
@@ -18,39 +21,46 @@ import functools
 
 ## graph ##
 
-plt.ion()
+if graphing:
+    plt.ion()
 
-class Graph:
-    def __init__(self, data, color = "blue"):
-        self.fig = plt.figure()
-        self.data = data
-        self.color = color
-        self.update()
+    class Graph:
+        def __init__(self, data, color = "blue"):
+            self.fig = plt.figure()
+            self.data = data
+            self.color = color
+            self.update()
 
-    def update(self):
-        plt.plot(self.data, color=self.color)
+        def update(self):
+            plt.plot(self.data, color=self.color)
 
-        self.fig.canvas.draw()
-        self.fig.canvas.flush_events()
+            self.fig.canvas.draw()
+            self.fig.canvas.flush_events()
 
-data = []
-gq = queue.Queue()
-graph = Graph(data)
+    data = []
+    gq = queue.Queue()
+    graph = Graph(data)
+    graph.pltCount = 0
+    graph.pltAvgs = []
 
-def plot(v):
-    def func():
-        data.append(v)
-        graph.update()
-    gq.put(func)
+    def plot(v):
+        def func():
+            graph.pltCount += 1
+            graph.pltAvgs.append(v)
+            if graph.pltCount % avg == 0:
+                data.append(sum(graph.pltAvgs)/len(graph.pltAvgs))
+                graph.update()
+                graph.pltAvgs = []
+        gq.put(func)
 
-def pltUpdate(self):
-    if not gq.empty():
-        item = gq.get_nowait()
-        item()
-        gq.task_done()
+    def pltUpdate():
+        while not gq.empty():
+            item = gq.get_nowait()
+            item()
+            gq.task_done()
 
-gt = threading.Thread(target=pltUpdate)
-gt.start()
+    gt = threading.Thread(target=pltUpdate)
+    gt.start()
 
 ## create  map ##
 
@@ -153,46 +163,47 @@ def raycast(sx,sy,a,d = -1,color = -1):
 
 ## graphics ##
 
-pg.init()
-screen = pg.display.set_mode((width, height))
-q = queue.Queue()
+if graphics:
+    pg.init()
+    screen = pg.display.set_mode((width, height))
+    q = queue.Queue()
 
-background = pg.Surface([width, height])
+    background = pg.Surface([width, height])
 
-for x in range(width):
-    for y in range(height):
-        if map[x, y] == 1:
-            Background.set_at((x,y), (255,255,255))
+    for x in range(width):
+        for y in range(height):
+            if map[x, y] == 1:
+                Background.set_at((x,y), (255,255,255))
 
-pg.draw.circle(background, (0,255,0), target, 24, 2)
+    pg.draw.circle(background, (0,255,0), target, 24, 2)
 
-def pgUpdate():
-    c = 0
-    while True:
-        item = q.get()
-        screen.blit(background, (0,0), special_flags=pg.BLEND_MAX)
-        item()
-        q.task_done()
+    def pgUpdate():
+        c = 0
+        while True:
+            item = q.get()
+            screen.blit(background, (0,0), special_flags=pg.BLEND_MAX)
+            item()
+            q.task_done()
 
-dt = threading.Thread(target=pgUpdate)
-dt.start()
+    dt = threading.Thread(target=pgUpdate)
+    dt.start()
 
-def draw(pos,w,h,a,color,line):
-    a = math.radians(-a)
-    sin = math.sin(a)
-    cos = math.cos(a)
+    def draw(pos,w,h,a,color,line):
+        a = math.radians(-a)
+        sin = math.sin(a)
+        cos = math.cos(a)
 
-    w /= 2
-    h /= 2
+        w /= 2
+        h /= 2
 
-    pg.draw.lines(screen, color, True, [
-        pos + np.array([-w * cos -  h * sin, -w * sin +  h * cos]),
-        pos + np.array([-w * cos - -h * sin, -w * sin + -h * cos]),
-        pos + np.array([ w * cos - -h * sin,  w * sin + -h * cos]),
-        pos + np.array([ w * cos -  h * sin,  w * sin +  h * cos])
-    ], line)
+        pg.draw.lines(screen, color, True, [
+            pos + np.array([-w * cos -  h * sin, -w * sin +  h * cos]),
+            pos + np.array([-w * cos - -h * sin, -w * sin + -h * cos]),
+            pos + np.array([ w * cos - -h * sin,  w * sin + -h * cos]),
+            pos + np.array([ w * cos -  h * sin,  w * sin +  h * cos])
+        ], line)
 
-    pg.display.flip()
+        pg.display.flip()
 
 ## gym ##
 
@@ -218,10 +229,9 @@ class BotEnv(gym.Env):
     sim = 0
     end = "None"
 
-    updater = pltUpdate
-
     def __init__(self):
-        pass
+        if graphing:
+            self.updater = pltUpdate
 
     def _step(self, action):
         ## at goal ##
@@ -235,7 +245,7 @@ class BotEnv(gym.Env):
 
         collison = False
 
-        a = math.radians(-self.angle)
+        '''a = math.radians(-self.angle)
         sin = math.sin(a)
         cos = math.cos(a)
 
@@ -260,17 +270,7 @@ class BotEnv(gym.Env):
             self.angle, self.size[1]
         ):
             collison = True
-            self.end = "collison"
-
-        ## out of bounds ##
-
-        outofbounds = False
-
-        '''
-        if not inrange(self.pos[0], self.pos[1]):
-            outofbounds = True
-            self.end = "out of bounds"
-        '''
+            self.end = "collison"'''
 
         ## time ##
 
@@ -284,21 +284,21 @@ class BotEnv(gym.Env):
 
         ## update stuff ##
 
-        done = goal or collison or outofbounds or timeout
+        done = goal or collison or timeout
 
         if not done:
-            if not trail and self.time % draws == 0 and self.time != draws:
+            if graphics and not trail and self.time % draws == 0 and self.time != draws:
                 q.put(self.clear)
 
             self._take_action(action)
 
-            if self.time % draws == 0:
+            if graphics and self.time % draws == 0:
                 q.put(self.drawFunc(self.color, 2))
                 if not trail:
                     self.clear = self.drawFunc((0,0,0), 2)
 
         reward = self._get_reward(collison, goal)
-        ob = self._get_info() #self.env.getState()
+        ob = self._get_info()
 
         self.total += reward
 
@@ -308,9 +308,10 @@ class BotEnv(gym.Env):
         if self.time != 0:
             avg = int(self.total / self.time)
             print("sim: ", sim, "\t| score: ", avg, "\t| time: ", self.time, "\t| end: ", self.end)
-            plot(min(avg,0))
+            if graphing:
+                plot(min(avg,0))
 
-        if not trail and self.time > draws:
+        if graphics and not trail and self.time > draws:
             q.put(self.clear)
 
         self.sim = sim
@@ -355,16 +356,24 @@ class BotEnv(gym.Env):
 
         speed = (LS + RS) / 4
 
-        self.pos[0] += int(speed * math.sin(math.radians(self.angle)))
-        self.pos[1] += int(speed * math.cos(math.radians(self.angle)))
+        if speed is None:
+            print("NO SPEED")
 
+        if math.sin(math.radians(self.angle)) is None:
+            print("NOT SIN")
+        try:
+            self.pos[0] += int(speed * math.sin(math.radians(self.angle)))
+            self.pos[1] += int(speed * math.cos(math.radians(self.angle)))
+        except Exception as e:
+            print(e)
+            print('\nAngle:{}\tPosition:{}\tSpeed:{}\n'.format(self.angle,self.pos, speed))
     def _get_reward(self, collison, goal):
         reward = 0
 
         if collison:
             reward -= 100
         if goal:
-            reward = 1000000000
+            reward = 100
         else:
             d = dist(self.pos[0], self.pos[1], target[0], target[1])
             reward -= d / 10
@@ -383,5 +392,7 @@ class BotEnv(gym.Env):
         return [
             ultra_LS, ultra_LC, ultra_FC, ultra_RC, ultra_RS,
             self.pos[0], self.pos[1], self.angle,
-            target[0], target[1]
+            target[0], target[1],
+            dist(self.pos[0], self.pos[1], target[0], target[1]),
+            (target[0] - self.pos[0]) * math.cos(math.radians(self.angle)) + (target[1] - self.pos[1]) * math.sin(math.radians(self.angle))
         ]

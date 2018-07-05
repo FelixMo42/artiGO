@@ -22,15 +22,15 @@ GLOBAL_NET_SCOPE = 'Global_Net'
 UPDATE_GLOBAL_ITER = 10
 GAMMA = 0.999
 ENTROPY_BETA = 0.005
-LR_A = 0.002  # learning rate for actor
-LR_C = 0.01  # learning rate for critic
+LR_A = 0.002 # learning rate for actor
+LR_C = 0.01 # learning rate for critic
 GLOBAL_RUNNING_R = []
 GLOBAL_EP = 0  # will increase during training, stop training when it >= MAX_GLOBAL_EP
 
 env = gym.make(GAME)
 
-N_S = 10#env.observation_space.shape[0]
-N_A = 4#env.action_space.shape[0]
+N_S = len( env._get_info() ) #env.observation_space.shape[0]
+N_A = 4 #env.action_space.shape[0]
 A_BOUND = [-5, 10]
 
 # print(env.unwrapped.hull.position[0])
@@ -226,8 +226,8 @@ if __name__ == "__main__":
         for w in worker_threads:
             if not w.isAlive():
                 threadsDone = True
-        env.updater()
-        print("update")
+        if hasattr(env,"updater"):
+            env.updater()
         time.sleep(5)
 
     GLOBAL_AC.save_ckpt()

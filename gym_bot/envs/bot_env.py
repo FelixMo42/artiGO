@@ -1,18 +1,56 @@
 draws = 10
-anglediv = 6
+anglediv = 2
 maxtime = 1000
-trail = False
+trail = True
+
 ## imports ##
 
 import gym
 import numpy as np
 import queue
 import pygame as pg
+import matplotlib.pyplot as plt
 import math
 import random
 import time
 import threading
 import functools
+
+## graph ##
+
+plt.ion()
+
+class Graph:
+    def __init__(self, data, color = "blue"):
+        self.fig = plt.figure()
+        self.data = data
+        self.color = color
+        self.update()
+
+    def update(self):
+        plt.plot(self.data, color=self.color)
+
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+
+data = []
+gq = queue.Queue()
+graph = Graph(data)
+
+def plot(v):
+    def func():
+        data.append(v)
+        graph.update()
+    gq.put(func)
+
+def pltUpdate(self):
+    if not gq.empty():
+        item = gq.get_nowait()
+        item()
+        gq.task_done()
+
+gt = threading.Thread(target=pltUpdate)
+gt.start()
 
 ## create  map ##
 
@@ -132,13 +170,12 @@ def pgUpdate():
     c = 0
     while True:
         item = q.get()
-        if trail:
-            screen.blit(background, (0,0), special_flags=pg.BLEND_MAX)
+        screen.blit(background, (0,0), special_flags=pg.BLEND_MAX)
         item()
         q.task_done()
 
-t1 = threading.Thread(target=pgUpdate)
-t1.start()
+dt = threading.Thread(target=pgUpdate)
+dt.start()
 
 def draw(pos,w,h,a,color,line):
     a = math.radians(-a)
@@ -180,6 +217,8 @@ class BotEnv(gym.Env):
     p = 0
     sim = 0
     end = "None"
+
+    updater = pltUpdate
 
     def __init__(self):
         pass
@@ -267,7 +306,9 @@ class BotEnv(gym.Env):
 
     def _reset(self, sim):
         if self.time != 0:
-            print("sim: ", sim, "\t| score: ", int(self.total / self.time), "\t| time: ", self.time, "\t| end: ", self.end)
+            avg = int(self.total / self.time)
+            print("sim: ", sim, "\t| score: ", avg, "\t| time: ", self.time, "\t| end: ", self.end)
+            plot(min(avg,0))
 
         if not trail and self.time > draws:
             q.put(self.clear)
@@ -326,7 +367,7 @@ class BotEnv(gym.Env):
             reward = 1000000000
         else:
             d = dist(self.pos[0], self.pos[1], target[0], target[1])
-            reward -= d ** 2
+            reward -= d / 10
             #if d > dist(250,250 , target[0], target[1]):
             #    reward *= 2
 

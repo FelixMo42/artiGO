@@ -5,6 +5,7 @@ import tensorflow as tf
 import gym
 import tensorlayer as tl
 from tensorlayer.layers import DenseLayer, InputLayer
+import time
 
 import gym_bot
 
@@ -21,8 +22,8 @@ GLOBAL_NET_SCOPE = 'Global_Net'
 UPDATE_GLOBAL_ITER = 10
 GAMMA = 0.999
 ENTROPY_BETA = 0.005
-LR_A = 0.005  # learning rate for actor
-LR_C = 0.025  # learning rate for critic
+LR_A = 0.002  # learning rate for actor
+LR_C = 0.01  # learning rate for critic
 GLOBAL_RUNNING_R = []
 GLOBAL_EP = 0  # will increase during training, stop training when it >= MAX_GLOBAL_EP
 
@@ -146,13 +147,10 @@ class Worker(object):
         global GLOBAL_RUNNING_R, GLOBAL_EP
         total_step = 1
         buffer_s, buffer_a, buffer_r = [], [], []
-        while not COORD.should_stop() and GLOBAL_EP < MAX_GLOBAL_EP:
+        while not threadsDone and GLOBAL_EP < MAX_GLOBAL_EP:
             s = self.env._reset(GLOBAL_EP)
             ep_r = 0
             while True:
-                # visualize Worker_0 during training
-                if self.name == 'Worker_0' and total_step % 30 == 0:
-                    self.env.render()
                 a = self.AC.choose_action(s)
                 s_, r, done, _info = self.env.step(a)
 
@@ -218,12 +216,19 @@ if __name__ == "__main__":
     tl.layers.initialize_global_variables(sess)
 
     # start TF threading
+    threadsDone = False
     worker_threads = []
     for worker in workers:
         t = threading.Thread(target=worker.work)
         t.start()
         worker_threads.append(t)
-    COORD.join(worker_threads)
+    while True:
+        for w in worker_threads:
+            if not w.isAlive():
+                threadsDone = True
+        env.updater()
+        print("update")
+        time.sleep(5)
 
     GLOBAL_AC.save_ckpt()
 

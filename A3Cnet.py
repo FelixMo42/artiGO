@@ -22,8 +22,8 @@ GLOBAL_NET_SCOPE = 'Global_Net'
 UPDATE_GLOBAL_ITER = 10
 GAMMA = 0.999
 ENTROPY_BETA = 0.005
-LR_A = 0.002 # learning rate for actor
-LR_C = 0.01 # learning rate for critic
+LR_A = 0.0002 # learning rate for actor
+LR_C = 0.001 # learning rate for critic
 GLOBAL_RUNNING_R = []
 GLOBAL_EP = 0  # will increase during training, stop training when it >= MAX_GLOBAL_EP
 
@@ -100,8 +100,8 @@ class ACNet(object):
         w_init = tf.contrib.layers.xavier_initializer()
         with tf.variable_scope('actor'):  # Policy network
             nn = InputLayer(self.s, name='in')
-            nn = DenseLayer(nn, n_units=500, act=tf.nn.relu6, W_init=w_init, name='la')
-            nn = DenseLayer(nn, n_units=300, act=tf.nn.relu6, W_init=w_init, name='la2')
+            nn = DenseLayer(nn, n_units=64, act=tf.nn.relu6, W_init=w_init, name='la')
+            nn = DenseLayer(nn, n_units=64, act=tf.nn.relu6, W_init=w_init, name='la2')
             mu = DenseLayer(nn, n_units=N_A, act=tf.nn.tanh, W_init=w_init, name='mu')
             sigma = DenseLayer(nn, n_units=N_A, act=tf.nn.softplus, W_init=w_init, name='sigma')
             self.mu = mu.outputs
@@ -212,7 +212,6 @@ if __name__ == "__main__":
             i_name = 'Worker_%i' % i  # worker name
             workers.append(Worker(i_name, GLOBAL_AC))
 
-    COORD = tf.train.Coordinator()
     tl.layers.initialize_global_variables(sess)
 
     # start TF threading
@@ -222,13 +221,16 @@ if __name__ == "__main__":
         t = threading.Thread(target=worker.work)
         t.start()
         worker_threads.append(t)
-    while True:
-        for w in worker_threads:
-            if not w.isAlive():
-                threadsDone = True
-        if hasattr(env,"updater"):
-            env.updater()
-        time.sleep(5)
+    try:
+        while True:
+            for w in worker_threads:
+                if not w.isAlive():
+                    threadsDone = True
+            if hasattr(env,"updater"):
+                env.updater()
+            time.sleep(5)
+    except KeyboardInterupt:
+        pass
 
     GLOBAL_AC.save_ckpt()
 

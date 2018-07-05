@@ -4,7 +4,7 @@ maxtime = 1000
 trail = True
 graphics = False
 graphing = True
-avg = 10
+avg = 100
 
 ## imports ##
 
@@ -74,7 +74,7 @@ def addRect(sx,sy,w,h):
 
 #addRect(500 - 30,500 - 30,60,60)
 
-target = [750, 750]
+target = [500, 500]
 
 ## ray casting ##
 
@@ -315,7 +315,8 @@ class BotEnv(gym.Env):
             q.put(self.clear)
 
         self.sim = sim
-        self.pos = [random.randint(0,1000),random.randint(0,1000)]
+        a = math.radians(random.randint(1,360))
+        self.pos = [500 * math.cos(a) + 500, 500 * math.sin(a) + 500]
         self.angle = 45 + 180
         self.total = 0
         self.time = 0

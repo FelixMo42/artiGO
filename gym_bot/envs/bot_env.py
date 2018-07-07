@@ -1,8 +1,8 @@
 draws = 10
 anglediv = 4
-maxtime = 1000
-trail = True
-graphics = False
+maxtime = 300
+trail = False
+graphics = True
 graphing = True
 avg = 100
 
@@ -25,32 +25,77 @@ if graphing:
     plt.ion()
 
     class Graph:
-        def __init__(self, data, color = "blue"):
+        def __init__(self, datas, color = "blue"):
             self.fig = plt.figure()
-            self.data = data
+            self.datas = datas
             self.color = color
             self.update()
 
         def update(self):
-            plt.plot(self.data, color=self.color)
+            for data in self.datas:
+                if len(data["data"]) > 0:
+                    plt.plot(np.arange(len(data["data"])) * data["tick"], data["data"], color=data["color"], linewidth=data["size"])
 
             self.fig.canvas.draw()
             self.fig.canvas.flush_events()
 
-    data = []
     gq = queue.Queue()
-    graph = Graph(data)
-    graph.pltCount = 0
-    graph.pltAvgs = []
 
-    def plot(v):
+    pltAvgs = []
+    pltAvgs10 = []
+    pltAvgs100 = []
+    pltAvgs1000 = []
+
+    pltWins = []
+    pltWins10 = []
+    pltWins100 = []
+    pltWins1000 = []
+
+    graph = Graph([
+        #{"data": pltAvgs, "color": "blue", "size": 1, "tick": 1},
+        {"data": pltAvgs10, "color": "blue", "size": 2, "tick": 10},
+        {"data": pltAvgs100, "color": "blue", "size": 3, "tick": 100},
+        {"data": pltAvgs1000, "color": "blue", "size": 4, "tick": 1000},
+        {"data": pltWins, "color": "yellow", "size": 1, "tick": 1},
+        {"data": pltWins10, "color": "yellow", "size": 2, "tick": 10},
+        #{"data": pltWins100, "color": "yellow", "size": 3, "tick": 100},
+        #{"data": pltWins1000, "color": "yellow", "size": 4, "tick": 1000},
+    ])
+
+    graph.count = 0
+
+    graph.pltAvgs = pltAvgs
+    graph.pltAvgs10 = pltAvgs10
+    graph.pltAvgs100 = pltAvgs100
+    graph.pltAvgs1000 = pltAvgs1000
+
+    graph.pltWins = pltWins
+    graph.pltWins10 = pltWins10
+    graph.pltWins100 = pltWins100
+    graph.pltWins1000 = pltWins1000
+
+    def plot(v, s):
         def func():
-            graph.pltCount += 1
-            graph.pltAvgs.append(v)
-            if graph.pltCount % avg == 0:
-                data.append(sum(graph.pltAvgs)/len(graph.pltAvgs))
-                graph.update()
-                graph.pltAvgs = []
+            pltAvgs.append(v)
+            if graph.count % 10 == 0:
+                graph.pltAvgs10.append(sum(graph.pltAvgs[-10:])/min(10, graph.count + 1))
+            if graph.count % 100 == 0:
+                graph.pltAvgs100.append(sum(graph.pltAvgs[-100:])/min(100, graph.count + 1))
+            if graph.count % 1000 == 0:
+                graph.pltAvgs1000.append(sum(graph.pltAvgs[-1000:])/min(1000, graph.count + 1))
+
+            if s:
+                pltWins.append(10)
+            else:
+                pltWins.append(0)
+            if graph.count % 10 == 0:
+                graph.pltWins10.append(sum(graph.pltWins[-10:])/min(10, graph.count + 1))
+            if graph.count % 100 == 0:
+                graph.pltWins100.append(sum(graph.pltWins[-100:])/min(100, graph.count + 1))
+            if graph.count % 1000 == 0:
+                graph.pltWins1000.append(sum(graph.pltWins[-1000:])/min(1000, graph.count + 1))
+
+            graph.count += 1
         gq.put(func)
 
     def pltUpdate():
@@ -58,6 +103,7 @@ if graphing:
             item = gq.get_nowait()
             item()
             gq.task_done()
+        graph.update()
 
     gt = threading.Thread(target=pltUpdate)
     gt.start()
@@ -189,9 +235,8 @@ if graphics:
     dt.start()
 
     def draw(pos,w,h,a,color,line):
-        a = math.radians(-a)
-        sin = math.sin(a)
-        cos = math.cos(a)
+        sin = math.sin(-a)
+        cos = math.cos(-a)
 
         w /= 2
         h /= 2
@@ -309,7 +354,7 @@ class BotEnv(gym.Env):
             avg = int(self.total / self.time)
             print("sim: ", sim, "\t| score: ", avg, "\t| time: ", self.time, "\t| end: ", self.end)
             if graphing:
-                plot(min(avg,0))
+                plot(avg, self.end == "goal")
 
         if graphics and not trail and self.time > draws:
             q.put(self.clear)
@@ -322,6 +367,7 @@ class BotEnv(gym.Env):
         self.time = 0
         self.color = [random.randint(0,255), random.randint(0,255), random.randint(0,255)]
         self.end = "none"
+        self.p = dist(self.pos[0], self.pos[1], target[0], target[1])
 
         return self._get_info()
 
@@ -357,17 +403,13 @@ class BotEnv(gym.Env):
 
         speed = (LS + RS) / 4
 
-        if speed is None:
-            print("NO SPEED")
-
-        if math.sin(math.radians(self.angle)) is None:
-            print("NOT SIN")
         try:
             self.pos[0] += int(speed * math.sin(math.radians(self.angle)))
             self.pos[1] += int(speed * math.cos(math.radians(self.angle)))
         except Exception as e:
             print(e)
             print('\nAngle:{}\tPosition:{}\tSpeed:{}\n'.format(self.angle,self.pos, speed))
+
     def _get_reward(self, collison, goal):
         reward = 0
 
@@ -377,21 +419,22 @@ class BotEnv(gym.Env):
             reward = 100
         else:
             d = dist(self.pos[0], self.pos[1], target[0], target[1])
-            reward -= d / 10
+            reward += max(d - self.p, 0) * 10
+            self.p = min(self.p, d)
             #if d > dist(250,250 , target[0], target[1]):
             #    reward *= 2
 
         return reward
 
     def _get_info(self):
-        ultra_LS = raycast(self.pos[0], self.pos[0], self.angle + 45) * 10
-        ultra_LC = raycast(self.pos[0], self.pos[0], self.angle + 10) * 10
-        ultra_FC = raycast(self.pos[0], self.pos[0], self.angle + 0) * 10
-        ultra_RC = raycast(self.pos[0], self.pos[0], self.angle - 10) * 10
-        ultra_RS = raycast(self.pos[0], self.pos[0], self.angle - 45) * 10
+        #ultra_LS = raycast(self.pos[0], self.pos[0], self.angle + 45) * 10
+        #ultra_LC = raycast(self.pos[0], self.pos[0], self.angle + 10) * 10
+        #ultra_FC = raycast(self.pos[0], self.pos[0], self.angle + 0) * 10
+        #ultra_RC = raycast(self.pos[0], self.pos[0], self.angle - 10) * 10
+        #ultra_RS = raycast(self.pos[0], self.pos[0], self.angle - 45) * 10
 
         return [
-            ultra_LS, ultra_LC, ultra_FC, ultra_RC, ultra_RS,
+            #ultra_LS, ultra_LC, ultra_FC, ultra_RC, ultra_RS,
             self.pos[0], self.pos[1], self.angle,
             target[0], target[1],
             dist(self.pos[0], self.pos[1], target[0], target[1]),

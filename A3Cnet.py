@@ -17,15 +17,16 @@ OUTPUT_GRAPH = False
 LOG_DIR = './log'
 N_WORKERS = multiprocessing.cpu_count()
 # N_WORKERS = 4
-MAX_GLOBAL_EP = 20000  # 8000
+MAX_GLOBAL_EP = 20001  # 8000
 GLOBAL_NET_SCOPE = 'Global_Net'
 UPDATE_GLOBAL_ITER = 10
 GAMMA = 0.999
 ENTROPY_BETA = 0.005
-LR_A = 0.0002 # learning rate for actor
-LR_C = 0.001 # learning rate for critic
+LR_A = 0.0005 # learning rate for actor
+LR_C = 0.01 # learning rate for critic
 GLOBAL_RUNNING_R = []
 GLOBAL_EP = 0  # will increase during training, stop training when it >= MAX_GLOBAL_EP
+l2_scale = 0.01
 
 env = gym.make(GAME)
 
@@ -99,20 +100,16 @@ class ACNet(object):
     def _build_net(self):
         w_init = tf.contrib.layers.xavier_initializer()
         with tf.variable_scope('actor'):  # Policy network
-            nn = InputLayer(self.s, name='in')
-            nn = DenseLayer(nn, n_units=64, act=tf.nn.relu6, W_init=w_init, name='la')
-            nn = DenseLayer(nn, n_units=64, act=tf.nn.relu6, W_init=w_init, name='la2')
-            mu = DenseLayer(nn, n_units=N_A, act=tf.nn.tanh, W_init=w_init, name='mu')
-            sigma = DenseLayer(nn, n_units=N_A, act=tf.nn.softplus, W_init=w_init, name='sigma')
-            self.mu = mu.outputs
-            self.sigma = sigma.outputs
+            regs =  tf.contrib.layers.l2_regularizer(l2_scale)
+            nn = tf.layers.dense(self.s, units=64, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='la')
+            nn = tf.layers.dense(nn, units=64, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='la2')
+            self.mu = tf.layers.dense(nn, units=N_A, activation=tf.nn.tanh, kernel_initializer=w_init, kernel_regularizer=regs, name='mu')
+            self.sigma = tf.layers.dense(nn, units=N_A, activation=tf.nn.softplus, kernel_initializer=w_init, kernel_regularizer=regs, name='sigma')
 
-        with tf.variable_scope('critic'):  # we use Value-function here, but not Q-function.
-            nn = InputLayer(self.s, name='in')
-            nn = DenseLayer(nn, n_units=500, act=tf.nn.relu6, W_init=w_init, name='lc')
-            nn = DenseLayer(nn, n_units=200, act=tf.nn.relu6, W_init=w_init, name='lc2')
-            v = DenseLayer(nn, n_units=1, W_init=w_init, name='v')
-            self.v = v.outputs
+        with tf.variable_scope('critic'):
+            nn = tf.layers.dense(self.s, units=64, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='lc')
+            nn = tf.layers.dense(nn, units=64, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='lc2')
+            self.v = tf.layers.dense(nn, units=1, kernel_initializer=w_init, name='v')
 
     def update_global(self, feed_dict):  # run by a local
         _, _, t = sess.run([self.update_a_op, self.update_c_op, self.test], feed_dict)  # local grads applies to global net
@@ -153,9 +150,6 @@ class Worker(object):
             while True:
                 a = self.AC.choose_action(s)
                 s_, r, done, _info = self.env.step(a)
-
-                # set robot falls reward to -2 instead of -100
-                if r == -100: r = -2
 
                 ep_r += r
                 buffer_s.append(s)
@@ -203,8 +197,8 @@ if __name__ == "__main__":
 
     # ============================= TRAINING ===============================
     with tf.device("/cpu:0"):
-        OPT_A = tf.train.RMSPropOptimizer(LR_A, name='RMSPropA')
-        OPT_C = tf.train.RMSPropOptimizer(LR_C, name='RMSPropC')
+        OPT_A = tf.train.AdagradOptimizer(LR_A, name='RMSPropA')
+        OPT_C = tf.train.AdagradOptimizer(LR_C, name='RMSPropC')
         GLOBAL_AC = ACNet(GLOBAL_NET_SCOPE)  # we only need its params
         workers = []
         # Create worker
@@ -221,6 +215,7 @@ if __name__ == "__main__":
         t = threading.Thread(target=worker.work)
         t.start()
         worker_threads.append(t)
+
     try:
         while True:
             for w in worker_threads:
@@ -228,9 +223,9 @@ if __name__ == "__main__":
                     threadsDone = True
             if hasattr(env,"updater"):
                 env.updater()
-            time.sleep(5)
+            time.sleep(10)
     except KeyboardInterupt:
-        pass
+        threadsDone = True
 
     GLOBAL_AC.save_ckpt()
 

@@ -1,6 +1,6 @@
 draws = 10
-anglediv = 4
-maxtime = 300
+anglediv = 10
+maxtime = 500
 trail = False
 graphics = True
 graphing = True
@@ -10,7 +10,7 @@ avg = 100
 
 import gym
 import numpy as np
-import queue
+from queue import Queue
 import pygame as pg
 import matplotlib.pyplot as plt
 import math
@@ -39,7 +39,7 @@ if graphing:
             self.fig.canvas.draw()
             self.fig.canvas.flush_events()
 
-    gq = queue.Queue()
+    gq = Queue()
 
     pltAvgs = []
     pltAvgs10 = []
@@ -53,13 +53,13 @@ if graphing:
 
     graph = Graph([
         #{"data": pltAvgs, "color": "blue", "size": 1, "tick": 1},
-        {"data": pltAvgs10, "color": "blue", "size": 2, "tick": 10},
-        {"data": pltAvgs100, "color": "blue", "size": 3, "tick": 100},
-        {"data": pltAvgs1000, "color": "blue", "size": 4, "tick": 1000},
-        {"data": pltWins, "color": "yellow", "size": 1, "tick": 1},
-        {"data": pltWins10, "color": "yellow", "size": 2, "tick": 10},
-        #{"data": pltWins100, "color": "yellow", "size": 3, "tick": 100},
-        #{"data": pltWins1000, "color": "yellow", "size": 4, "tick": 1000},
+        #{"data": pltAvgs10, "color": "blue", "size": 2, "tick": 10},
+        #{"data": pltAvgs100, "color": "blue", "size": 3, "tick": 100},
+        #{"data": pltAvgs1000, "color": "blue", "size": 4, "tick": 1000},
+        #{"data": pltWins, "color": "yellow", "size": 1, "tick": 1},
+        #{"data": pltWins10, "color": "yellow", "size": 2, "tick": 10},
+        {"data": pltWins100, "color": "yellow", "size": 3, "tick": 100},
+        {"data": pltWins1000, "color": "yellow", "size": 4, "tick": 1000},
     ])
 
     graph.count = 0
@@ -77,15 +77,15 @@ if graphing:
     def plot(v, s):
         def func():
             pltAvgs.append(v)
-            if graph.count % 10 == 0:
-                graph.pltAvgs10.append(sum(graph.pltAvgs[-10:])/min(10, graph.count + 1))
-            if graph.count % 100 == 0:
-                graph.pltAvgs100.append(sum(graph.pltAvgs[-100:])/min(100, graph.count + 1))
-            if graph.count % 1000 == 0:
-                graph.pltAvgs1000.append(sum(graph.pltAvgs[-1000:])/min(1000, graph.count + 1))
+            #if graph.count % 10 == 0:
+            #    graph.pltAvgs10.append(sum(graph.pltAvgs[-10:])/min(10, graph.count + 1))
+            #if graph.count % 100 == 0:
+            #    graph.pltAvgs100.append(sum(graph.pltAvgs[-100:])/min(100, graph.count + 1))
+            #if graph.count % 1000 == 0:
+            #    graph.pltAvgs1000.append(sum(graph.pltAvgs[-1000:])/min(1000, graph.count + 1))
 
             if s:
-                pltWins.append(10)
+                pltWins.append(100.0)
             else:
                 pltWins.append(0)
             if graph.count % 10 == 0:
@@ -212,7 +212,7 @@ def raycast(sx,sy,a,d = -1,color = -1):
 if graphics:
     pg.init()
     screen = pg.display.set_mode((width, height))
-    q = queue.Queue()
+    q = Queue()
 
     background = pg.Surface([width, height])
 
@@ -260,6 +260,9 @@ def rangeify(n):
     else:
         return n
 
+class Globals:
+    q = q
+
 class BotEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
@@ -272,7 +275,9 @@ class BotEnv(gym.Env):
     time = 0
     p = 0
     sim = 0
-    end = "None"
+    end = "none"
+
+    dist = dist
 
     def __init__(self):
         if graphing:
@@ -280,15 +285,12 @@ class BotEnv(gym.Env):
 
     def _step(self, action):
         ## at goal ##
-        goal = False
 
         if dist(self.pos[0], self.pos[1], target[0], target[1]) < self.size[0]:
-            goal = True
             self.end = "goal"
+            self.goal = True
 
         ## hit thing ##
-
-        collison = False
 
         '''a = math.radians(-self.angle)
         sin = math.sin(a)
@@ -314,22 +316,18 @@ class BotEnv(gym.Env):
             self.pos[1] + w * sin + -h * cos,
             self.angle, self.size[1]
         ):
-            collison = True
             self.end = "collison"'''
 
         ## time ##
 
         self.time += 1
 
-        timeout = False
-
         if self.time >= maxtime:
-            timeout = True
             self.end = "time"
 
         ## update stuff ##
 
-        done = goal or collison or timeout
+        done = self.end != "none" and self.end != "goal"
 
         if not done:
             if graphics and not trail and self.time % draws == 0 and self.time != draws:
@@ -342,7 +340,7 @@ class BotEnv(gym.Env):
                 if not trail:
                     self.clear = self.drawFunc((0,0,0), 2)
 
-        reward = self._get_reward(collison, goal)
+        reward = self._get_reward()
         ob = self._get_info()
 
         self.total += reward
@@ -353,13 +351,15 @@ class BotEnv(gym.Env):
         if self.time != 0:
             avg = int(self.total / self.time)
             print("sim: ", sim, "\t| score: ", avg, "\t| time: ", self.time, "\t| end: ", self.end)
+
             if graphing:
-                plot(avg, self.end == "goal")
+                plot(avg, self.goal)
 
         if graphics and not trail and self.time > draws:
             q.put(self.clear)
 
         self.sim = sim
+        self.goal = False
         a = math.radians(random.randint(1,360))
         self.pos = [500 * math.cos(a) + 500, 500 * math.sin(a) + 500]
         self.angle = 45 + 180
@@ -410,21 +410,28 @@ class BotEnv(gym.Env):
             print(e)
             print('\nAngle:{}\tPosition:{}\tSpeed:{}\n'.format(self.angle,self.pos, speed))
 
-    def _get_reward(self, collison, goal):
-        reward = 0
-
-        if collison:
-            reward -= 100
-        if goal:
-            reward = 100
+    def _get_reward(self):
+        if self.goal:
+            self.reward = 10
+            return self.reward
         else:
-            d = dist(self.pos[0], self.pos[1], target[0], target[1])
-            reward += max(d - self.p, 0) * 10
-            self.p = min(self.p, d)
-            #if d > dist(250,250 , target[0], target[1]):
-            #    reward *= 2
+            self.reward = -100
 
-        return reward
+        d = dist(self.pos[0], self.pos[1], target[0], target[1])
+        self.reward += max( (self.p - d) * 10, 0 )
+        self.p = min(self.p, d)
+
+#        if self.reward < 0:
+#            self.reward = 0
+#        else:
+#            self.reward += (100 / d) ** 2
+
+        if self.end == "goal":
+            self.reward += 200
+        #if self.end == "time":
+        #    self.reward -= 200
+
+        return self.reward
 
     def _get_info(self):
         #ultra_LS = raycast(self.pos[0], self.pos[0], self.angle + 45) * 10
@@ -433,10 +440,13 @@ class BotEnv(gym.Env):
         #ultra_RC = raycast(self.pos[0], self.pos[0], self.angle - 10) * 10
         #ultra_RS = raycast(self.pos[0], self.pos[0], self.angle - 45) * 10
 
+        d = dist(self.pos[0], self.pos[1], target[0], target[1])
+        angle_offset = self.angle
+
         return [
             #ultra_LS, ultra_LC, ultra_FC, ultra_RC, ultra_RS,
-            self.pos[0], self.pos[1], self.angle,
-            target[0], target[1],
-            dist(self.pos[0], self.pos[1], target[0], target[1]),
+            self.pos[0], self.pos[1], d,
+            target[0], target[1], angle_offset,
+            math.cos(self.angle), math.sin(self.angle),
             (target[0] - self.pos[0]) * math.cos(math.radians(self.angle)) + (target[1] - self.pos[1]) * math.sin(math.radians(self.angle))
         ]

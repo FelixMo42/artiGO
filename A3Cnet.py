@@ -2,28 +2,25 @@ import multiprocessing
 import threading
 import numpy as np
 import tensorflow as tf
+import ctypes
 import gym
 import tensorlayer as tl
 from tensorlayer.layers import DenseLayer, InputLayer
 import time
-
 import gym_bot
 
-tf.logging.set_verbosity(tf.logging.DEBUG)
-tl.logging.set_verbosity(tl.logging.DEBUG)
+tf.set_random_seed(42)
 
 GAME = 'Bot-v0'
 OUTPUT_GRAPH = False
 LOG_DIR = './log'
 N_WORKERS = multiprocessing.cpu_count()
-# N_WORKERS = 4
-MAX_GLOBAL_EP = 20001  # 8000
 GLOBAL_NET_SCOPE = 'Global_Net'
-UPDATE_GLOBAL_ITER = 10
-GAMMA = 0.999
+UPDATE_GLOBAL_ITER = 30
+GAMMA = 0.95
 ENTROPY_BETA = 0.005
-LR_A = 0.0005 # learning rate for actor
-LR_C = 0.01 # learning rate for critic
+LR_A = 0.0002 # learning rate for actor
+LR_C = 0.001 # learning rate for critic
 GLOBAL_RUNNING_R = []
 GLOBAL_EP = 0  # will increase during training, stop training when it >= MAX_GLOBAL_EP
 l2_scale = 0.01
@@ -100,15 +97,15 @@ class ACNet(object):
     def _build_net(self):
         w_init = tf.contrib.layers.xavier_initializer()
         with tf.variable_scope('actor'):  # Policy network
-            regs =  tf.contrib.layers.l2_regularizer(l2_scale)
-            nn = tf.layers.dense(self.s, units=64, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='la')
-            nn = tf.layers.dense(nn, units=64, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='la2')
+            regs = None#tf.contrib.layers.l2_regularizer(l2_scale)
+            nn = tf.layers.dense(self.s, units=16, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='la')
+            nn = tf.layers.dense(nn, units=16, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='la2')
             self.mu = tf.layers.dense(nn, units=N_A, activation=tf.nn.tanh, kernel_initializer=w_init, kernel_regularizer=regs, name='mu')
             self.sigma = tf.layers.dense(nn, units=N_A, activation=tf.nn.softplus, kernel_initializer=w_init, kernel_regularizer=regs, name='sigma')
 
         with tf.variable_scope('critic'):
-            nn = tf.layers.dense(self.s, units=64, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='lc')
-            nn = tf.layers.dense(nn, units=64, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='lc2')
+            nn = tf.layers.dense(self.s, units=16, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='lc')
+            nn = tf.layers.dense(nn, units=16, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='lc2')
             self.v = tf.layers.dense(nn, units=1, kernel_initializer=w_init, name='v')
 
     def update_global(self, feed_dict):  # run by a local
@@ -135,16 +132,18 @@ class ACNet(object):
 
 
 class Worker(object):
-    def __init__(self, name, globalAC):
-        self.env = gym.make(GAME)
-        self.name = name
-        self.AC = ACNet(name, globalAC)
+    def __init__(self, i, globalAC):
+        with tf.device("/cpu:" + str(i)):
+            self.env = gym.make(GAME)
+            self.name = 'Worker_%i' % i
+            self.AC = ACNet(self.name, globalAC)
 
     def work(self):
         global GLOBAL_RUNNING_R, GLOBAL_EP
+
         total_step = 1
         buffer_s, buffer_a, buffer_r = [], [], []
-        while not threadsDone and GLOBAL_EP < MAX_GLOBAL_EP:
+        while not threadsDone:
             s = self.env._reset(GLOBAL_EP)
             ep_r = 0
             while True:
@@ -156,8 +155,7 @@ class Worker(object):
                 buffer_a.append(a)
                 buffer_r.append(r)
 
-                if total_step % UPDATE_GLOBAL_ITER == 0 or done:  # update global and assign to local net
-
+                if total_step % UPDATE_GLOBAL_ITER == 0 or done:
                     if done:
                         v_s_ = 0  # terminal
                     else:
@@ -191,26 +189,22 @@ class Worker(object):
                     GLOBAL_EP += 1
                     break
 
-
 if __name__ == "__main__":
-    sess = tf.Session()
-
     # ============================= TRAINING ===============================
     with tf.device("/cpu:0"):
         OPT_A = tf.train.AdagradOptimizer(LR_A, name='RMSPropA')
         OPT_C = tf.train.AdagradOptimizer(LR_C, name='RMSPropC')
         GLOBAL_AC = ACNet(GLOBAL_NET_SCOPE)  # we only need its params
         workers = []
-        # Create worker
-        for i in range(N_WORKERS):
-            i_name = 'Worker_%i' % i  # worker name
-            workers.append(Worker(i_name, GLOBAL_AC))
+    for i in range(N_WORKERS):
+        workers.append(Worker(i, GLOBAL_AC))
 
+    sess = tf.Session(config=tf.ConfigProto(device_count={"CPU": N_WORKERS}))
     tl.layers.initialize_global_variables(sess)
 
-    # start TF threading
     threadsDone = False
     worker_threads = []
+
     for worker in workers:
         t = threading.Thread(target=worker.work)
         t.start()
@@ -218,14 +212,15 @@ if __name__ == "__main__":
 
     try:
         while True:
-            for w in worker_threads:
-                if not w.isAlive():
-                    threadsDone = True
             if hasattr(env,"updater"):
                 env.updater()
             time.sleep(10)
-    except KeyboardInterupt:
-        threadsDone = True
+    except KeyboardInterrupt:
+        pass
+
+    threadsDone.value = True
+    for process in worker_threads:
+        process.join()
 
     GLOBAL_AC.save_ckpt()
 

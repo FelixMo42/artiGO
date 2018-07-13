@@ -17,22 +17,21 @@ LOG_DIR = './log'
 N_WORKERS = multiprocessing.cpu_count()
 GLOBAL_NET_SCOPE = 'Global_Net'
 UPDATE_GLOBAL_ITER = 30
-GAMMA = 0.95
+GAMMA = 0.995
 ENTROPY_BETA = 0.005
 LR_A = 0.0002 # learning rate for actor
 LR_C = 0.001 # learning rate for critic
 GLOBAL_RUNNING_R = []
 GLOBAL_EP = 0  # will increase during training, stop training when it >= MAX_GLOBAL_EP
-l2_scale = 0.01
+l2_scale = 0.001
+hidden = [32, 32]
 
 env = gym.make(GAME)
 
-N_S = len( env._get_info() ) #env.observation_space.shape[0]
-N_A = 4 #env.action_space.shape[0]
-A_BOUND = [-5, 10]
+N_S = len( env._get_info() )
+N_A = 4
+A_BOUND = [-255, 255]
 
-# print(env.unwrapped.hull.position[0])
-# exit()
 
 
 class ACNet(object):
@@ -49,10 +48,9 @@ class ACNet(object):
                 normal_dist = tf.contrib.distributions.Normal(self.mu, self.sigma)  # for continuous action space
 
                 with tf.name_scope('choose_a'):  # use local params to choose action
-                    self.A = tf.clip_by_value(tf.squeeze(normal_dist.sample(1), axis=0), *A_BOUND)
+                    self.A = tf.nn.tanh(tf.squeeze(normal_dist.sample(1), axis=0)) * 255
 
         else:
-            ## worker network calculate gradient locally, update on global network
             with tf.variable_scope(scope):
                 self.s = tf.placeholder(tf.float32, [None, N_S], 'S')
                 self.a_his = tf.placeholder(tf.float32, [None, N_A], 'A')
@@ -63,6 +61,7 @@ class ACNet(object):
                 td = tf.subtract(self.v_target, self.v, name='TD_error')
                 with tf.name_scope('c_loss'):
                     self.c_loss = tf.reduce_mean(tf.square(td))
+                    self.c_loss_summary = tf.summary.scalar('{}-C-Loss'.format(scope), self.c_loss)
 
                 with tf.name_scope('wrap_a_out'):
                     self.test = self.sigma[0]
@@ -73,12 +72,12 @@ class ACNet(object):
                 with tf.name_scope('a_loss'):
                     log_prob = normal_dist.log_prob(self.a_his)
                     exp_v = log_prob * td
-                    entropy = normal_dist.entropy()  # encourage exploration
+                    entropy = normal_dist.entropy()
                     self.exp_v = ENTROPY_BETA * entropy + exp_v
                     self.a_loss = tf.reduce_mean(-self.exp_v)
 
                 with tf.name_scope('choose_a'):  # use local params to choose action
-                    self.A = tf.clip_by_value(tf.squeeze(normal_dist.sample(1), axis=0), *A_BOUND)
+                    self.A = tf.nn.tanh(tf.squeeze(normal_dist.sample(1), axis=0)) * 255
 
                 with tf.name_scope('local_grad'):
                     self.a_params = tl.layers.get_variables_with_name(scope + '/actor', True, False)
@@ -98,17 +97,18 @@ class ACNet(object):
         w_init = tf.contrib.layers.xavier_initializer()
         with tf.variable_scope('actor'):  # Policy network
             regs = None#tf.contrib.layers.l2_regularizer(l2_scale)
-            nn = tf.layers.dense(self.s, units=16, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='la')
-            nn = tf.layers.dense(nn, units=16, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='la2')
+            nn = tf.layers.dense(self.s, units=hidden[0], activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='la')
+            nn = tf.layers.dense(nn, units=hidden[1], activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='la2')
             self.mu = tf.layers.dense(nn, units=N_A, activation=tf.nn.tanh, kernel_initializer=w_init, kernel_regularizer=regs, name='mu')
             self.sigma = tf.layers.dense(nn, units=N_A, activation=tf.nn.softplus, kernel_initializer=w_init, kernel_regularizer=regs, name='sigma')
 
         with tf.variable_scope('critic'):
-            nn = tf.layers.dense(self.s, units=16, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='lc')
-            nn = tf.layers.dense(nn, units=16, activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='lc2')
+            nn = tf.layers.dense(self.s, units=hidden[0], activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='lc')
+            nn = tf.layers.dense(nn, units=hidden[1], activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='lc2')
             self.v = tf.layers.dense(nn, units=1, kernel_initializer=w_init, name='v')
 
     def update_global(self, feed_dict):  # run by a local
+        sess.run(self.c_loss_summary, feed_dict)
         _, _, t = sess.run([self.update_a_op, self.update_c_op, self.test], feed_dict)  # local grads applies to global net
         return t
 
@@ -117,6 +117,8 @@ class ACNet(object):
 
     def choose_action(self, s):  # run by a local
         s = [s]
+        print("mu: ", sess.run(self.mu, {self.s: s}))
+        print("sig: ", sess.run(self.sigma, {self.s: s}))
         return sess.run(self.A, {self.s: s})[0]
 
     def save_ckpt(self):
@@ -190,7 +192,6 @@ class Worker(object):
                     break
 
 if __name__ == "__main__":
-    # ============================= TRAINING ===============================
     with tf.device("/cpu:0"):
         OPT_A = tf.train.AdagradOptimizer(LR_A, name='RMSPropA')
         OPT_C = tf.train.AdagradOptimizer(LR_C, name='RMSPropC')
@@ -202,6 +203,8 @@ if __name__ == "__main__":
     sess = tf.Session(config=tf.ConfigProto(device_count={"CPU": N_WORKERS}))
     tl.layers.initialize_global_variables(sess)
 
+
+    summary_writer = tf.summary.FileWriter('./summary',sess.graph)
     threadsDone = False
     worker_threads = []
 
@@ -218,7 +221,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
 
-    threadsDone.value = True
+    threadsDone = True
     for process in worker_threads:
         process.join()
 

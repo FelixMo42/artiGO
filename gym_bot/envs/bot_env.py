@@ -2,8 +2,8 @@ draws = 15
 anglediv = 10
 maxtime = 500
 trail = False
-graphics = True
-graphing = True
+graphics = False
+graphing = True#False
 avg = 100
 
 ## imports ##
@@ -129,7 +129,7 @@ sqrts = {}
 def dist(xi,yi,xii,yii):
     pow = (xi-xii) ** 2 + (yi-yii) ** 2
     if pow not in sqrts:
-        sqrts[pow] = math.sqrt(pow)
+        sqrts[pow] = max(math.sqrt(pow), 1)
     return sqrts[pow]
 
 def inrange(x,y):
@@ -409,7 +409,7 @@ class BotEnv(gym.Env):
         if d < self.size[0]:
             self.reward += 200
         elif self.goal:
-            self.reward = 100 / d
+            self.reward = 10
         else:
             self.reward += max( (self.p - d) * 10, 0 )
             self.p = min(self.p, d)
@@ -424,12 +424,13 @@ class BotEnv(gym.Env):
         #ultra_RS = raycast(self.pos[0], self.pos[0], self.angle - 45) * 10
 
         d = dist(self.pos[0], self.pos[1], target[0], target[1])
-        angle_offset = self.angle - math.asin((self.pos[1] - target[1]) / d)
+        y_dist = (self.pos[1] - target[1])
+        angle_offset = self.angle - math.asin(max(-1, min(y_dist / d, 1)))
 
         return [
             #ultra_LS, ultra_LC, ultra_FC, ultra_RC, ultra_RS,
             self.pos[0], self.pos[1], d,
             target[0], target[1], angle_offset,
-#            math.cos(self.angle), math.sin(self.angle),
-#            (target[0] - self.pos[0]) * math.cos(math.radians(self.angle)) + (target[1] - self.pos[1]) * math.sin(math.radians(self.angle))
+            #math.cos(self.angle), math.sin(self.angle),
+            #(target[0] - self.pos[0]) * math.cos(math.radians(self.angle)) + (target[1] - self.pos[1]) * math.sin(math.radians(self.angle))
         ]

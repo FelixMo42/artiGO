@@ -30,24 +30,21 @@ env = gym.make(GAME)
 
 N_S = len( env._get_info() )
 N_A = 4
-A_BOUND = [-255, 255]
-
-
+A_BOUND = [-5, 5]
 
 class ACNet(object):
     def __init__(self, scope, globalAC=None):
         self.scope = scope
         if scope == GLOBAL_NET_SCOPE:
-            ## global network only do inference
             with tf.variable_scope(scope):
                 self.s = tf.placeholder(tf.float32, [None, N_S], 'S')
                 self._build_net()
                 self.a_params = tl.layers.get_variables_with_name(scope + '/actor', True, False)
                 self.c_params = tl.layers.get_variables_with_name(scope + '/critic', True, False)
 
-                normal_dist = tf.contrib.distributions.Normal(self.mu, self.sigma)  # for continuous action space
+                normal_dist = tf.contrib.distributions.Normal(self.mu, self.sigma)
 
-                with tf.name_scope('choose_a'):  # use local params to choose action
+                with tf.name_scope('choose_a'):
                     self.A = tf.nn.tanh(tf.squeeze(normal_dist.sample(1), axis=0)) * 255
 
         else:
@@ -67,7 +64,7 @@ class ACNet(object):
                     self.test = self.sigma[0]
                     self.mu, self.sigma = self.mu * A_BOUND[1], self.sigma + 1e-5
 
-                normal_dist = tf.contrib.distributions.Normal(self.mu, self.sigma)  # for continuous action space
+                normal_dist = tf.contrib.distributions.Normal(self.mu, self.sigma)
 
                 with tf.name_scope('a_loss'):
                     log_prob = normal_dist.log_prob(self.a_his)
@@ -95,16 +92,22 @@ class ACNet(object):
 
     def _build_net(self):
         w_init = tf.contrib.layers.xavier_initializer()
-        with tf.variable_scope('actor'):  # Policy network
-            regs = None#tf.contrib.layers.l2_regularizer(l2_scale)
-            nn = tf.layers.dense(self.s, units=hidden[0], activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='la')
-            nn = tf.layers.dense(nn, units=hidden[1], activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='la2')
+        with tf.variable_scope('actor'):
+            regs = None
+            activ = tf.nn.tanh
+
+            nn = tf.layers.dense(self.s, units=hidden[0], activation=activ, kernel_initializer=w_init, name='la')
+
+            # WTF! why does this break, is it becaus of relu
+            nn = tf.layers.dense(nn, units=hidden[1], activation=activ, kernel_initializer=w_init, name='la2')
+            # AHHHHHHHHHH
+
             self.mu = tf.layers.dense(nn, units=N_A, activation=tf.nn.tanh, kernel_initializer=w_init, kernel_regularizer=regs, name='mu')
             self.sigma = tf.layers.dense(nn, units=N_A, activation=tf.nn.softplus, kernel_initializer=w_init, kernel_regularizer=regs, name='sigma')
 
         with tf.variable_scope('critic'):
-            nn = tf.layers.dense(self.s, units=hidden[0], activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='lc')
-            nn = tf.layers.dense(nn, units=hidden[1], activation=tf.nn.relu6, kernel_initializer=w_init, kernel_regularizer=regs, name='lc2')
+            nn = tf.layers.dense(self.s, units=hidden[0], activation=activ, kernel_initializer=w_init, kernel_regularizer=regs, name='lc')
+            nn = tf.layers.dense(nn, units=hidden[1], activation=activ, kernel_initializer=w_init, kernel_regularizer=regs, name='lc2')
             self.v = tf.layers.dense(nn, units=1, kernel_initializer=w_init, name='v')
 
     def update_global(self, feed_dict):  # run by a local
@@ -117,9 +120,8 @@ class ACNet(object):
 
     def choose_action(self, s):  # run by a local
         s = [s]
-        print("mu: ", sess.run(self.mu, {self.s: s}))
-        print("sig: ", sess.run(self.sigma, {self.s: s}))
-        return sess.run(self.A, {self.s: s})[0]
+        r = sess.run([self.A], {self.s: s})
+        return r[0][0]
 
     def save_ckpt(self):
         tl.files.exists_or_mkdir(self.scope)
@@ -195,7 +197,7 @@ if __name__ == "__main__":
     with tf.device("/cpu:0"):
         OPT_A = tf.train.AdagradOptimizer(LR_A, name='RMSPropA')
         OPT_C = tf.train.AdagradOptimizer(LR_C, name='RMSPropC')
-        GLOBAL_AC = ACNet(GLOBAL_NET_SCOPE)  # we only need its params
+        GLOBAL_AC = ACNet(GLOBAL_NET_SCOPE)
         workers = []
     for i in range(N_WORKERS):
         workers.append(Worker(i, GLOBAL_AC))
@@ -241,5 +243,5 @@ if __name__ == "__main__":
     #         s, r, d, _ = env.step(a)
     #         rall += r
     #         if d:
-    #             print("reward", rall)
+    #             prin("reward", rall)
     #             break

@@ -362,7 +362,7 @@ class BotEnv(gym.Env):
         self.time = 0
         self.color = [random.randint(0,255), random.randint(0,255), random.randint(0,255)]
         self.end = "none"
-        self.p = dist(self.pos[0], self.pos[1], target[0], target[1])
+        self.p = -dist(self.pos[0], self.pos[1], target[0], target[1])
 
         return self._get_info()
 
@@ -381,15 +381,17 @@ class BotEnv(gym.Env):
         return func
 
     def _take_action(self, action):
-        servo_FL, servo_FR, servo_BL, servo_BR = action
+        #servo_FL, servo_FR, servo_BL, servo_BR = action
 
-        servo_FL = rangeify(servo_FL)
-        servo_FR = rangeify(servo_FR)
-        servo_BL = rangeify(servo_BL)
-        servo_BR = rangeify(servo_BR)
+        #servo_FL = rangeify(servo_FL)
+        #servo_FR = rangeify(servo_FR)
+        #servo_BL = rangeify(servo_BL)
+        #servo_BR = rangeify(servo_BR)
 
-        LS = servo_FL + servo_BL
-        RS = servo_FR + servo_BR
+        LS, RS = action
+
+        LS = rangeify(LS)#servo_FL + servo_BL
+        RS = rangeify(LS)#servo_FR + servo_BR
 
         if LS > RS:
             self.angle += (LS - RS) / (2 * anglediv)
@@ -402,17 +404,20 @@ class BotEnv(gym.Env):
         self.pos[1] += int(speed * math.cos(math.radians(self.angle)))
 
     def _get_reward(self):
+        d = -dist(self.pos[0], self.pos[1], target[0], target[1])
+
         self.reward = -100
 
-        d = dist(self.pos[0], self.pos[1], target[0], target[1])
-
-        if d < self.size[0]:
-            self.reward += 200
+        if d > -self.size[0]:
+            self.reward = 300
         elif self.goal:
             self.reward = 10
-        else:
-            self.reward += max( (self.p - d) * 10, 0 )
-            self.p = min(self.p, d)
+        #elif self.p == d:
+        #    self.reward -= 50
+        elif self.p > d:
+            self.reward += (self.p - d) * 10
+
+        self.p = d#min(self.p, d)
 
         return self.reward
 

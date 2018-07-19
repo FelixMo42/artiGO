@@ -56,7 +56,7 @@ int dist() {
 
 void set(String m, int s) {
   if (m.equals("FL")) {
-    analogWrite(FL_M_S, s);
+    analogWrite(FL_M_S, abs(s));
 
     if (s > 0) {
       digitalWrite(FL_M_CL, HIGH);
@@ -69,7 +69,7 @@ void set(String m, int s) {
       digitalWrite(FL_M_CCL, HIGH);
     }
   } else if (m.equals("FR")) {
-    analogWrite(FR_M_S, s);
+    analogWrite(FR_M_S, abs(s));
 
     if (s > 0) {
       digitalWrite(FR_M_CL, HIGH);
@@ -82,7 +82,7 @@ void set(String m, int s) {
       digitalWrite(FR_M_CCL, HIGH);
     }
   } else if (m.equals("BL")) {
-    analogWrite(BL_M_S, s);
+    analogWrite(BL_M_S, abs(s));
 
     if (s > 0) {
       digitalWrite(BL_M_CL, HIGH);
@@ -95,7 +95,7 @@ void set(String m, int s) {
       digitalWrite(BL_M_CCL, HIGH);
     }
   } else if (m.equals("BR")) {
-    analogWrite(BR_M_S, s);
+    analogWrite(BR_M_S, abs(s));
 
     if (s > 0) {
       digitalWrite(BR_M_CL, HIGH);
@@ -111,7 +111,22 @@ void set(String m, int s) {
 }
 
 void loop() {
-  int d = 0;
+  String msg = "done";
+  
+  if (Serial.available()) {
+    delay(3);  //delay to allow buffer to fill
+    int LS = Serial.parseInt();
+    int RS = Serial.parseInt();
+
+    set("FL", LS);
+    set("FR", -LS);
+    set("BL", RS);
+    set("BR", -RS);
+ }
+  
+  Serial.println(msg);
+  
+  /*int d = 0;
   for (int i = 0; i < 5; i++) {
     int n = dist();
     if (n > 100) {
@@ -121,19 +136,7 @@ void loop() {
   }
   d /= 5;
 
-  Serial.println(d);
-
-  /*if (d > 500) {
-    set("FL", 100);
-    set("FR", 100);
-    set("BL", 100);
-    set("BR", 100);
-  } else {
-    set("FL", 0);
-    set("FR", 0);
-    set("BL", 0);
-    set("BR", 0);
-  }*/
+  Serial.println(d);*/
 
   delay(500);
 }

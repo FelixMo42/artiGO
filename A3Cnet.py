@@ -20,6 +20,8 @@ GLOBAL_NET_SCOPE = 'Global_Net'
 UPDATE_GLOBAL_ITER = 30
 GAMMA = 0.995
 ENTROPY_BETA = 0.005
+VALUE_LOSS = .4
+POLICY_LOSS = .4
 LR_A = 0.0002
 LR_C = 0.001
 GLOBAL_RUNNING_R = []
@@ -67,16 +69,18 @@ class ACNet(object):
                     self.c_loss_summary = tf.summary.scalar('{}-C-Loss'.format(scope), self.c_loss)
 
                 with tf.name_scope('wrap_a_out'):
-                    #self.test = self.sigma[0]
                     self.mu, self.sigma = self.mu * A_BOUND[1], self.sigma + 1e-5
 
                 normal_dist = tf.contrib.distributions.Normal(self.mu, self.sigma)
 
                 with tf.name_scope('a_loss'):
-                    log_prob = normal_dist.log_prob(self.a_his)# * self.advantages
+                    log_prob = normal_dist.log_prob(self.a_his)
                     exp_v = log_prob * td
                     entropy = normal_dist.entropy()
-                    self.exp_v = ENTROPY_BETA * entropy + exp_v
+                    advantages = tf.expand_dims(self.advantages, 1)
+                    resp_a = tf.abs(self.a_his)
+                    policy_loss = tf.matmul(tf.transpose(tf.log(resp_a)), advantages)
+                    self.exp_v = ENTROPY_BETA * entropy + exp_v * VALUE_LOSS + tf.transpose(policy_loss) * POLICY_LOSS
                     self.a_loss = tf.reduce_mean(-self.exp_v)
 
                 with tf.name_scope('choose_a'):  # use local params to choose action

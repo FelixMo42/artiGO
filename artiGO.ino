@@ -123,7 +123,7 @@ void loop() {
 
   Serial.println(d);
 
-  if (d > 500) {
+  /*if (d > 500) {
     set("FL", 100);
     set("FR", 100);
     set("BL", 100);
@@ -133,7 +133,7 @@ void loop() {
     set("FR", 0);
     set("BL", 0);
     set("BR", 0);
-  }
+  }*/
 
   delay(500);
 }
